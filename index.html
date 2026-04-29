@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Mecha Builder: Mapping Edition</title>
+    <title>Mecha Builder: High-Vis Selection</title>
     <style>
         body { margin: 0; background: #050505; color: white; font-family: 'Segoe UI', sans-serif; overflow: hidden; touch-action: none; user-select: none; }
         #nav-bar { position: absolute; top: 0; width: 100%; display: flex; background: #111; z-index: 200; border-bottom: 1px solid #333; height: 44px; }
@@ -11,9 +11,9 @@
         .tab.active { color: #00ffff; background: #1a1a1a; border-bottom: 2px solid #00ffff; }
 
         #ui-panel { position: absolute; right: 10px; top: 55px; width: 200px; background: rgba(15, 15, 15, 0.9); padding: 15px; border-radius: 8px; border: 1px solid #444; z-index: 150; }
-        #bone-label { font-size: 14px; font-weight: bold; color: #00ffff; display: block; margin-bottom: 10px; text-align: center; border-bottom: 1px solid #333; padding-bottom: 5px;}
+        #bone-label { font-size: 14px; font-weight: bold; color: #ffff00; display: block; margin-bottom: 10px; text-align: center; border-bottom: 1px solid #333; padding-bottom: 5px;}
         label { display: block; font-size: 9px; color: #888; margin-top: 8px; text-transform: uppercase; }
-        input[type=range] { width: 100%; cursor: pointer; accent-color: #00ffff; }
+        input[type=range] { width: 100%; cursor: pointer; accent-color: #ffff00; }
         .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-top: 10px; }
         .btn { width: 100%; padding: 8px; cursor: pointer; background: #222; color: white; border: 1px solid #444; border-radius: 4px; font-size: 9px; font-weight: bold; text-transform: uppercase; }
         
@@ -93,7 +93,7 @@
     };
 
     let scene, camera, renderer, controls, raycaster;
-    let parts = [], pivots = {}, clickables = [];
+    let parts = [], pivots = {}, clickableBones = [];
     let currentPose = Object.fromEntries(Object.keys(config).map(n => [n, [0,0,0]]));
     let selectedBone = "Root", activeBox = null;
     let currentTab = 'vehicle', morphT = 0, morphTarget = 0;
@@ -124,11 +124,6 @@
             pivot.name = name;
             pivots[name] = pivot;
 
-            const dot = new THREE.Mesh(new THREE.SphereGeometry(0.05), new THREE.MeshBasicMaterial({color: 0xffffff}));
-            dot.userData.boneName = name;
-            pivot.add(dot);
-            clickables.push(dot);
-
             if (config[name].p) pivots[config[name].p].add(pivot);
             else scene.add(pivot);
 
@@ -138,17 +133,32 @@
                 pivot.position.set(pData.d[0]*pData.l, pData.d[1]*pData.l, pData.d[2]*pData.l);
             }
 
+            // The Cylinder Bone Mesh (Now Selectable)
             if (config[name].l > 0) {
-                const mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, config[name].l, 6), new THREE.MeshBasicMaterial({color: 0x555555}));
-                mesh.position.set(config[name].d[0]*config[name].l/2, config[name].d[1]*config[name].l/2, config[name].d[2]*config[name].l/2);
-                if(config[name].d[0] !== 0) mesh.rotation.z = Math.PI/2;
-                if(config[name].d[2] !== 0) mesh.rotation.x = Math.PI/2;
-                pivot.add(mesh);
+                const boneMesh = new THREE.Mesh(
+                    new THREE.CylinderGeometry(0.04, 0.04, config[name].l, 8), 
+                    new THREE.MeshStandardMaterial({color: 0x555555, emissive: 0x000000})
+                );
+                boneMesh.position.set(config[name].d[0]*config[name].l/2, config[name].d[1]*config[name].l/2, config[name].d[2]*config[name].l/2);
+                
+                if(config[name].d[0] !== 0) boneMesh.rotation.z = Math.PI/2;
+                if(config[name].d[2] !== 0) boneMesh.rotation.x = Math.PI/2;
+                
+                boneMesh.userData.boneName = name;
+                pivot.add(boneMesh);
+                clickableBones.push(boneMesh);
 
+                // Fin indicator
                 const fin = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.1, 0.03), new THREE.MeshBasicMaterial({color: 0x00ffff}));
-                fin.position.copy(mesh.position);
-                fin.position.z += 0.04; fin.rotation.x = Math.PI/2;
+                fin.position.copy(boneMesh.position);
+                fin.position.z += 0.06; fin.rotation.x = Math.PI/2;
                 pivot.add(fin);
+            } else {
+                // Root/Small joints
+                const dot = new THREE.Mesh(new THREE.SphereGeometry(0.08), new THREE.MeshBasicMaterial({color: 0xffffff}));
+                dot.userData.boneName = name;
+                pivot.add(dot);
+                clickableBones.push(dot);
             }
         });
 
@@ -172,13 +182,10 @@
         activeBox.material.emissive.setHex(0x333333);
         document.getElementById('mapping-info').innerText = "Mapped to: " + mesh.userData.targetBone;
         ['sx','sy','sz'].forEach(id => document.getElementById(id).value = mesh.scale[id.charAt(1)]);
-        document.getElementById('protect-btn').style.background = mesh.userData.isProtected ? "#00ffff" : "#333";
-        document.getElementById('protect-btn').style.color = mesh.userData.isProtected ? "#000" : "#00ffff";
     }
 
     window.startMapping = (boneName) => {
-        isMapping = true;
-        mappingTargetBone = boneName;
+        isMapping = true; mappingTargetBone = boneName;
         document.getElementById('map-status').style.display = 'block';
         document.getElementById('target-map-name').innerText = boneName;
     };
@@ -216,29 +223,19 @@
         }
     };
 
-    window.toggleProtect = () => {
-        if (!activeBox) return;
-        activeBox.userData.isProtected = !activeBox.userData.isProtected;
-        activeBox.material.color.set(activeBox.userData.isProtected ? 0x00ffff : 0xffffff);
-        setActiveBox(activeBox);
-    };
-
-    window.deleteBox = () => {
-        if (!activeBox) return;
-        scene.remove(activeBox);
-        parts = parts.filter(p => p !== activeBox);
-        activeBox = parts[0] || null;
-        if(activeBox) setActiveBox(activeBox);
-    };
-
     window.mirrorPose = (from, to) => {
         Object.keys(currentPose).forEach(name => {
             let target = null;
             if (name.includes(`_${from}`)) target = name.replace(`_${from}`, `_${to}`);
             else if (name.startsWith(`${from}_`)) target = name.replace(`${from}_`, `${to}_`);
+            
             if (target && currentPose[target]) {
                 const src = currentPose[name];
-                currentPose[target] = [src[0], -src[1], -src[2]];
+                // For arms/shoulders, X swing usually needs inversion to match "forward"
+                let mirrorX = src[0];
+                if (name.toLowerCase().includes('arm') || name.toLowerCase().includes('forearm')) mirrorX = -src[0];
+                
+                currentPose[target] = [mirrorX, -src[1], -src[2]];
             }
         });
     };
@@ -259,7 +256,7 @@
             return; 
         }
 
-        const hitBone = raycaster.intersectObjects(clickables)[0];
+        const hitBone = raycaster.intersectObjects(clickableBones)[0];
         if (hitBone && currentTab === 'humanoid') { 
             selectedBone = hitBone.object.userData.boneName;
             document.getElementById('bone-label').innerText = selectedBone;
@@ -282,26 +279,29 @@
             let swingAxis = (Math.abs(boneDir.y) > 0.5 || name === "Root" || name === "Spine") ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
             pivot.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(swingAxis, x));
             pivot.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(boneDir.length() === 0 ? new THREE.Vector3(0,1,0) : boneDir, y));
+
+            // High-Vis Selection Glow
+            pivot.children.forEach(c => {
+                if (c.material && c.userData.boneName) {
+                    c.material.emissive.setHex(name === selectedBone ? 0xaaaa00 : 0x000000);
+                }
+            });
         });
 
-        const worldPos = new THREE.Vector3();
         parts.forEach(p => {
-            const boneName = p.userData.targetBone || "Chest";
-            const bone = pivots[boneName];
+            const bone = pivots[p.userData.targetBone || "Chest"];
             bone.updateMatrixWorld();
-            worldPos.setFromMatrixPosition(bone.matrixWorld);
+            const worldPos = new THREE.Vector3().setFromMatrixPosition(bone.matrixWorld);
             p.position.lerpVectors(p.userData.startPos, worldPos, morphT);
-            
             if (!p.userData.isProtected) {
-                const l = config[boneName].l || 0.5;
+                const l = config[p.userData.targetBone].l || 0.5;
                 p.scale.lerpVectors(p.userData.startScale, new THREE.Vector3(l*0.4, l, l*0.4), morphT);
             }
             p.quaternion.slerp(bone.getWorldQuaternion(new THREE.Quaternion()), morphT);
         });
 
-        Object.values(pivots).forEach(p => p.visible = (currentTab === 'humanoid'));
+        clickableBones.forEach(b => b.visible = (currentTab === 'humanoid'));
         parts.forEach(p => p.visible = (currentTab !== 'humanoid'));
-
         renderer.render(scene, camera);
     }
 </script>
