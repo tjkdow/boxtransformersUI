@@ -3,16 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Mecha Builder & Poser</title>
+    <title>Mecha Builder: Mapping Edition</title>
     <style>
         body { margin: 0; background: #050505; color: white; font-family: 'Segoe UI', sans-serif; overflow: hidden; touch-action: none; user-select: none; }
-        
-        /* Navigation */
         #nav-bar { position: absolute; top: 0; width: 100%; display: flex; background: #111; z-index: 200; border-bottom: 1px solid #333; height: 44px; }
         .tab { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 11px; cursor: pointer; text-transform: uppercase; color: #666; border-right: 1px solid #222; }
         .tab.active { color: #00ffff; background: #1a1a1a; border-bottom: 2px solid #00ffff; }
 
-        /* UI Panel (Right Side) */
         #ui-panel { position: absolute; right: 10px; top: 55px; width: 200px; background: rgba(15, 15, 15, 0.9); padding: 15px; border-radius: 8px; border: 1px solid #444; z-index: 150; }
         #bone-label { font-size: 14px; font-weight: bold; color: #00ffff; display: block; margin-bottom: 10px; text-align: center; border-bottom: 1px solid #333; padding-bottom: 5px;}
         label { display: block; font-size: 9px; color: #888; margin-top: 8px; text-transform: uppercase; }
@@ -20,9 +17,9 @@
         .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-top: 10px; }
         .btn { width: 100%; padding: 8px; cursor: pointer; background: #222; color: white; border: 1px solid #444; border-radius: 4px; font-size: 9px; font-weight: bold; text-transform: uppercase; }
         
-        /* Floating Build Buttons */
         #build-controls { position: absolute; bottom: 20px; left: 20px; display: flex; flex-direction: column; gap: 10px; z-index: 150; }
-        .build-btn { padding: 15px 25px; border-radius: 5px; border: none; font-weight: bold; cursor: pointer; text-transform: uppercase; }
+        .build-btn { padding: 12px 20px; border-radius: 5px; border: none; font-weight: bold; cursor: pointer; text-transform: uppercase; font-size: 11px; }
+        #map-status { position: absolute; top: 50px; left: 50%; transform: translateX(-50%); color: #ffcc00; font-weight: bold; display: none; background: rgba(0,0,0,0.8); padding: 5px 15px; border-radius: 20px; border: 1px solid #ffcc00; z-index: 100;}
     </style>
 </head>
 <body>
@@ -33,16 +30,18 @@
     <div class="tab" onclick="setTab('transform')">Transform</div>
 </div>
 
+<div id="map-status">MAPPING MODE: SELECT BOXES FOR <span id="target-map-name">NONE</span></div>
+
 <div id="ui-panel">
-    <div id="pose-header">
+    <div id="pose-header" style="display:none;">
         <label>Active Joint</label>
         <span id="bone-label">Root</span>
     </div>
     
     <div id="pose-controls" style="display:none;">
-        <label>Swing X</label><input type="range" id="rotX" min="-3.14" max="3.14" step="0.01" value="0">
+        <label>Swing X (Front/Back)</label><input type="range" id="rotX" min="-3.14" max="3.14" step="0.01" value="0">
         <label>Local Twist</label><input type="range" id="rotY" min="-3.14" max="3.14" step="0.01" value="0">
-        <label>Swing Z</label><input type="range" id="rotZ" min="-3.14" max="3.14" step="0.01" value="0">
+        <label>Swing Z (Side/Side)</label><input type="range" id="rotZ" min="-3.14" max="3.14" step="0.01" value="0">
         <div class="btn-group">
             <button class="btn" onclick="mirrorPose('L','R')">L→R</button>
             <button class="btn" onclick="mirrorPose('R','L')">R→L</button>
@@ -50,6 +49,7 @@
     </div>
 
     <div id="box-controls">
+        <label id="mapping-info">Mapped to: Chest</label>
         <label>Width</label><input type="range" id="sx" min="0.1" max="4" step="0.1" value="1">
         <label>Height</label><input type="range" id="sy" min="0.1" max="4" step="0.1" value="1">
         <label>Length</label><input type="range" id="sz" min="0.1" max="4" step="0.1" value="1">
@@ -59,6 +59,7 @@
 
 <div id="build-controls">
     <button class="build-btn" style="background:#2e7d32; color:white;" onclick="addBox()">+ Add Box</button>
+    <button class="build-btn" style="background:#ff8f00; color:white;" onclick="startMapping('Chest')">Map to Chest</button>
     <button id="protect-btn" class="build-btn" style="background:#333; color:#00ffff; border:1px solid #00ffff;" onclick="toggleProtect()">Protect Part</button>
 </div>
 
@@ -85,8 +86,10 @@
         "R_Forearm": { p: "R_Arm", l: 0.6, d: [-1,0,0] },
         "L_Thigh": { p: "Pelvis_L", l: 1.1, d: [0,-1,0] },
         "L_Calf": { p: "L_Thigh", l: 0.9, d: [0,-1,0] },
+        "L_Foot": { p: "L_Calf", l: 0.4, d: [0,0,1] },
         "R_Thigh": { p: "Pelvis_R", l: 1.1, d: [0,-1,0] },
-        "R_Calf": { p: "R_Thigh", l: 0.9, d: [0,-1,0] }
+        "R_Calf": { p: "R_Thigh", l: 0.9, d: [0,-1,0] },
+        "R_Foot": { p: "R_Calf", l: 0.4, d: [0,0,1] }
     };
 
     let scene, camera, renderer, controls, raycaster;
@@ -94,6 +97,7 @@
     let currentPose = Object.fromEntries(Object.keys(config).map(n => [n, [0,0,0]]));
     let selectedBone = "Root", activeBox = null;
     let currentTab = 'vehicle', morphT = 0, morphTarget = 0;
+    let isMapping = false, mappingTargetBone = "";
 
     init();
     animate();
@@ -138,6 +142,7 @@
                 const mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, config[name].l, 6), new THREE.MeshBasicMaterial({color: 0x555555}));
                 mesh.position.set(config[name].d[0]*config[name].l/2, config[name].d[1]*config[name].l/2, config[name].d[2]*config[name].l/2);
                 if(config[name].d[0] !== 0) mesh.rotation.z = Math.PI/2;
+                if(config[name].d[2] !== 0) mesh.rotation.x = Math.PI/2;
                 pivot.add(mesh);
 
                 const fin = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.1, 0.03), new THREE.MeshBasicMaterial({color: 0x00ffff}));
@@ -155,7 +160,7 @@
     function addBox() {
         const mesh = new THREE.Mesh(new THREE.BoxGeometry(1,1,1), new THREE.MeshPhongMaterial({ color: 0xffffff }));
         mesh.position.set((Math.random()-0.5)*2, 1, (Math.random()-0.5)*2);
-        mesh.userData = { isProtected: false, startPos: new THREE.Vector3(), startScale: new THREE.Vector3(1,1,1), targetBone: Object.keys(config)[Math.floor(Math.random() * 15)] };
+        mesh.userData = { isProtected: false, startPos: new THREE.Vector3(), startScale: new THREE.Vector3(1,1,1), targetBone: "Chest" };
         scene.add(mesh);
         parts.push(mesh);
         setActiveBox(mesh);
@@ -165,10 +170,18 @@
         if (activeBox) activeBox.material.emissive.setHex(0x000000);
         activeBox = mesh;
         activeBox.material.emissive.setHex(0x333333);
+        document.getElementById('mapping-info').innerText = "Mapped to: " + mesh.userData.targetBone;
         ['sx','sy','sz'].forEach(id => document.getElementById(id).value = mesh.scale[id.charAt(1)]);
         document.getElementById('protect-btn').style.background = mesh.userData.isProtected ? "#00ffff" : "#333";
         document.getElementById('protect-btn').style.color = mesh.userData.isProtected ? "#000" : "#00ffff";
     }
+
+    window.startMapping = (boneName) => {
+        isMapping = true;
+        mappingTargetBone = boneName;
+        document.getElementById('map-status').style.display = 'block';
+        document.getElementById('target-map-name').innerText = boneName;
+    };
 
     function setupInputs() {
         ['rotX', 'rotY', 'rotZ'].forEach((id, axis) => {
@@ -185,6 +198,8 @@
 
     window.setTab = (tab) => {
         currentTab = tab;
+        isMapping = false;
+        document.getElementById('map-status').style.display = 'none';
         document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
         event.currentTarget.classList.add('active');
         
@@ -218,8 +233,13 @@
 
     window.mirrorPose = (from, to) => {
         Object.keys(currentPose).forEach(name => {
-            let target = name.includes(`_${from}`) ? name.replace(`_${from}`, `_${to}`) : (name.startsWith(from + '_') ? name.replace(from + '_', to + '_') : null);
-            if (target && currentPose[target]) currentPose[target] = [-currentPose[name][0], -currentPose[name][1], -currentPose[name][2]];
+            let target = null;
+            if (name.includes(`_${from}`)) target = name.replace(`_${from}`, `_${to}`);
+            else if (name.startsWith(`${from}_`)) target = name.replace(`${from}_`, `${to}_`);
+            if (target && currentPose[target]) {
+                const src = currentPose[name];
+                currentPose[target] = [src[0], -src[1], -src[2]];
+            }
         });
     };
 
@@ -229,7 +249,15 @@
         raycaster.setFromCamera(mouse, camera);
         
         const hitPart = raycaster.intersectObjects(parts)[0];
-        if (hitPart && currentTab === 'vehicle') { setActiveBox(hitPart.object); return; }
+        if (hitPart && currentTab === 'vehicle') { 
+            if (isMapping) {
+                hitPart.object.userData.targetBone = mappingTargetBone;
+                isMapping = false;
+                document.getElementById('map-status').style.display = 'none';
+            }
+            setActiveBox(hitPart.object); 
+            return; 
+        }
 
         const hitBone = raycaster.intersectObjects(clickables)[0];
         if (hitBone && currentTab === 'humanoid') { 
@@ -248,21 +276,24 @@
             const pivot = pivots[name];
             const [x, y, z] = currentPose[name];
             const boneDir = new THREE.Vector3().fromArray(config[name].d).normalize();
+            
             pivot.quaternion.set(0, 0, 0, 1);
             pivot.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), z));
-            let swing = (Math.abs(boneDir.y) > 0.5 || name === "Root" || name === "Spine") ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
-            pivot.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(swing, x));
+            let swingAxis = (Math.abs(boneDir.y) > 0.5 || name === "Root" || name === "Spine") ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
+            pivot.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(swingAxis, x));
             pivot.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(boneDir.length() === 0 ? new THREE.Vector3(0,1,0) : boneDir, y));
         });
 
         const worldPos = new THREE.Vector3();
         parts.forEach(p => {
-            const bone = pivots[p.userData.targetBone];
+            const boneName = p.userData.targetBone || "Chest";
+            const bone = pivots[boneName];
             bone.updateMatrixWorld();
             worldPos.setFromMatrixPosition(bone.matrixWorld);
             p.position.lerpVectors(p.userData.startPos, worldPos, morphT);
+            
             if (!p.userData.isProtected) {
-                const l = config[p.userData.targetBone].l || 0.5;
+                const l = config[boneName].l || 0.5;
                 p.scale.lerpVectors(p.userData.startScale, new THREE.Vector3(l*0.4, l, l*0.4), morphT);
             }
             p.quaternion.slerp(bone.getWorldQuaternion(new THREE.Quaternion()), morphT);
