@@ -3,40 +3,61 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Voxel Morph Rig</title>
+    <title>Mecha Builder & Transformer</title>
     <style>
-        body { margin: 0; background: #050505; color: white; font-family: sans-serif; overflow: hidden; touch-action: none; }
+        body { margin: 0; background: #050505; color: white; font-family: 'Segoe UI', sans-serif; overflow: hidden; touch-action: none; }
         
-        /* Tab Navigation */
-        .tab-bar { position: absolute; top: 0; width: 100%; display: flex; background: #111; z-index: 100; border-bottom: 1px solid #333; }
-        .tab { flex: 1; padding: 15px; text-align: center; font-size: 12px; cursor: pointer; text-transform: uppercase; letter-spacing: 1px; color: #888; }
-        .tab.active { color: #00ffff; border-bottom: 2px solid #00ffff; background: #1a1a1a; }
+        /* Navigation */
+        #nav-bar { position: absolute; top: 0; width: 100%; display: flex; background: #111; z-index: 100; border-bottom: 1px solid #333; height: 44px; }
+        .tab { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 10px; cursor: pointer; text-transform: uppercase; color: #666; border-right: 1px solid #222; }
+        .tab.active { color: #00ffff; background: #1a1a1a; border-bottom: 2px solid #00ffff; }
+        .tab:last-child { border-right: none; background: #b71c1c; color: white; }
 
-        /* HUD UI */
-        #ui-controls { position: absolute; bottom: 20px; width: 100%; display: flex; flex-direction: column; align-items: center; gap: 10px; pointer-events: none; }
-        .btn { pointer-events: auto; padding: 12px 24px; border-radius: 30px; border: none; font-weight: bold; cursor: pointer; transition: 0.2s; }
-        .btn-primary { background: #00ffff; color: #000; }
-        .btn-secondary { background: #333; color: #fff; }
-        .btn-transform { background: #ff0055; color: #fff; width: 80%; max-width: 300px; }
-        
-        #canvas-container { width: 100vw; height: 100vh; }
+        /* Vehicle Editor UI */
+        #editor-ui { position: absolute; bottom: 0; width: 100%; background: rgba(10,10,10,0.9); padding: 15px; box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; border-top: 1px solid #444; }
+        .slider-row { display: flex; align-items: center; gap: 10px; font-size: 10px; color: #888; }
+        input[type=range] { flex: 1; accent-color: #00ffff; }
+        .btn-row { display: flex; gap: 5px; }
+        .btn { flex: 1; padding: 12px; border: none; border-radius: 4px; font-weight: bold; font-size: 10px; cursor: pointer; text-transform: uppercase; }
+        .add-btn { background: #2e7d32; color: white; }
+        .protect-btn { background: #333; color: #00ffff; border: 1px solid #00ffff; }
+        .protect-btn.active { background: #00ffff; color: black; }
+        .del-btn { background: #c62828; color: white; flex: 0.3; }
+
+        /* Transform UI */
+        #transform-ui { position: absolute; bottom: 30px; width: 100%; display: none; justify-content: center; }
+        #morph-btn { width: 80%; max-width: 300px; background: #ff0055; color: white; box-shadow: 0 0 20px rgba(255,0,85,0.4); }
+
+        #label-overlay { position: absolute; top: 55px; left: 15px; font-size: 12px; color: #00ffff; pointer-events: none; }
     </style>
 </head>
 <body>
 
-<nav class="tab-bar">
-    <div class="tab" onclick="switchTab('vehicle')">Vehicle</div>
-    <div class="tab" onclick="switchTab('humanoid')">Humanoid</div>
-    <div class="tab" onclick="switchTab('side')">Side-by-Side</div>
-    <div class="tab" onclick="switchTab('transform')" id="tab-transform">Transform</div>
-</nav>
-
-<div id="ui-controls">
-    <button class="btn btn-secondary" id="select-mode" onclick="toggleSelectMode()">SELECT KEY PARTS</button>
-    <button class="btn btn-transform" onclick="triggerTransform()">EXECUTE MORPH</button>
+<div id="nav-bar">
+    <div class="tab active" onclick="setTab('vehicle')">Build Vehicle</div>
+    <div class="tab" onclick="setTab('humanoid')">Humanoid Area</div>
+    <div class="tab" onclick="setTab('side')">Side-by-Side</div>
+    <div class="tab" onclick="setTab('transform')">Transform</div>
 </div>
 
-<div id="canvas-container"></div>
+<div id="label-overlay">MODE: VEHICLE BUILDER</div>
+
+<div id="editor-ui">
+    <div class="slider-row">
+        <span>WIDTH</span><input type="range" id="sx" min="0.1" max="4" step="0.1" value="1">
+        <span>HEIGHT</span><input type="range" id="sy" min="0.1" max="4" step="0.1" value="1">
+        <span>LENGTH</span><input type="range" id="sz" min="0.1" max="4" step="0.1" value="1">
+    </div>
+    <div class="btn-row">
+        <button class="btn add-btn" onclick="addBox()">+ Add Box</button>
+        <button id="protect-toggle" class="btn protect-btn" onclick="toggleProtect()">Protect Part</button>
+        <button class="btn del-btn" onclick="deleteBox()">×</button>
+    </div>
+</div>
+
+<div id="transform-ui">
+    <button id="morph-btn" class="btn" onclick="triggerMorph()">Toggle Transformation</button>
+</div>
 
 <script type="importmap">
     { "imports": { 
@@ -44,3 +65,188 @@
         "controls": "https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js" 
     } }
 </script>
+
+<script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'controls';
+
+    // --- RIG CONFIG (YOUR DATA) ---
+    const config = {
+        "Root": { p: null, l: 0, d: [0,0,0] },
+        "Pelvis": { p: "Root", l: 0, d: [0,0,0], offset: [0, 2.05, 0] },
+        "Spine": { p: "Root", l: 0.8, d: [0,1,0], offset: [0, 2.05, 0] },
+        "Chest": { p: "Spine", l: 0.7, d: [0,1,0] },
+        "L_Arm": { p: "Chest", l: 0.8, d: [1,0,0] },
+        "R_Arm": { p: "Chest", l: 0.8, d: [-1,0,0] },
+        "L_Thigh": { p: "Pelvis", l: 1.0, d: [0,-1,0], offset:[0.3,0,0] },
+        "R_Thigh": { p: "Pelvis", l: 1.0, d: [0,-1,0], offset:[-0.3,0,0] },
+        "Head": { p: "Chest", l: 0.4, d:[0,1,0] }
+    };
+
+    let scene, camera, renderer, controls, raycaster;
+    let parts = [];
+    let activeBox = null;
+    let pivots = {};
+    let currentTab = 'vehicle';
+    let morphT = 0; // 0 to 1
+    let morphTarget = 0;
+
+    init();
+    animate();
+
+    function init() {
+        scene = new THREE.Scene();
+        camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 100);
+        camera.position.set(6, 4, 8);
+        
+        renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+        
+        controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        raycaster = new THREE.Raycaster();
+
+        scene.add(new THREE.GridHelper(10, 20, 0x333333, 0x222222));
+        const light = new THREE.DirectionalLight(0xffffff, 1);
+        light.position.set(5, 10, 5);
+        scene.add(light, new THREE.AmbientLight(0x444444));
+
+        // Create Rig Hierarchy
+        Object.keys(config).forEach(name => {
+            const pivot = new THREE.Group();
+            pivots[name] = pivot;
+            if (config[name].p) pivots[config[name].p].add(pivot);
+            else scene.add(pivot);
+            if (config[name].offset) pivot.position.set(...config[name].offset);
+        });
+
+        window.addEventListener('pointerdown', onSelect);
+        setupSliders();
+        addBox(); // Start with one box
+    }
+
+    function addBox() {
+        const geo = new THREE.BoxGeometry(1, 1, 1);
+        const mat = new THREE.MeshPhongMaterial({ color: 0xffffff });
+        const mesh = new THREE.Mesh(geo, mat);
+        
+        mesh.position.set(0, 1, 0);
+        mesh.userData = {
+            isProtected: false,
+            originalPos: new THREE.Vector3(),
+            originalScale: new THREE.Vector3(1,1,1),
+            targetBone: Object.keys(config)[Math.floor(Math.random() * Object.keys(config).length)]
+        };
+        
+        scene.add(mesh);
+        parts.push(mesh);
+        setActive(mesh);
+    }
+
+    function onSelect(e) {
+        if (currentTab !== 'vehicle' || e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON') return;
+        const mouse = new THREE.Vector2((e.clientX/window.innerWidth)*2-1, -(e.clientY/window.innerHeight)*2+1);
+        raycaster.setFromCamera(mouse, camera);
+        const hits = raycaster.intersectObjects(parts);
+        if (hits.length > 0) setActive(hits[0].object);
+    }
+
+    function setActive(mesh) {
+        if (activeBox) activeBox.material.emissive.setHex(0x000000);
+        activeBox = mesh;
+        activeBox.material.emissive.setHex(0x222222);
+        
+        document.getElementById('sx').value = mesh.scale.x;
+        document.getElementById('sy').value = mesh.scale.y;
+        document.getElementById('sz').value = mesh.scale.z;
+        document.getElementById('protect-toggle').classList.toggle('active', mesh.userData.isProtected);
+    }
+
+    function setupSliders() {
+        ['sx', 'sy', 'sz'].forEach(id => {
+            document.getElementById(id).oninput = (e) => {
+                if (activeBox) {
+                    activeBox.scale[id.charAt(1)] = parseFloat(e.target.value);
+                }
+            };
+        });
+    }
+
+    window.toggleProtect = () => {
+        if (!activeBox) return;
+        activeBox.userData.isProtected = !activeBox.userData.isProtected;
+        activeBox.material.color.set(activeBox.userData.isProtected ? 0x00ffff : 0xffffff);
+        document.getElementById('protect-toggle').classList.toggle('active', activeBox.userData.isProtected);
+    };
+
+    window.deleteBox = () => {
+        if (!activeBox) return;
+        scene.remove(activeBox);
+        parts = parts.filter(p => p !== activeBox);
+        activeBox = parts[0] || null;
+        if (activeBox) setActive(activeBox);
+    };
+
+    window.setTab = (tab) => {
+        currentTab = tab;
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        event.currentTarget.classList.add('active');
+        
+        document.getElementById('editor-ui').style.display = (tab === 'vehicle') ? 'flex' : 'none';
+        document.getElementById('transform-ui').style.display = (tab === 'transform') ? 'flex' : 'none';
+        document.getElementById('label-overlay').innerText = `MODE: ${tab.toUpperCase()}`;
+
+        if (tab === 'vehicle') morphTarget = 0;
+        
+        // Refresh original states before morphing
+        if (tab === 'transform') {
+            parts.forEach(p => {
+                p.userData.originalPos.copy(p.position);
+                p.userData.originalScale.copy(p.scale);
+            });
+        }
+    };
+
+    window.triggerMorph = () => {
+        morphTarget = morphTarget === 0 ? 1 : 0;
+    };
+
+    function animate() {
+        requestAnimationFrame(animate);
+        controls.update();
+
+        // Animation logic
+        morphT = THREE.MathUtils.lerp(morphT, morphTarget, 0.08);
+
+        const worldTarget = new THREE.Vector3();
+        parts.forEach(p => {
+            const boneName = p.userData.targetBone;
+            pivots[boneName].updateMatrixWorld();
+            worldTarget.setFromMatrixPosition(pivots[boneName].matrixWorld);
+
+            // Interpolate Position
+            p.position.lerpVectors(p.userData.originalPos, worldTarget, morphT);
+            
+            // Subtraction/Inflation logic
+            if (!p.userData.isProtected) {
+                const boneLength = config[boneName].l || 0.5;
+                const targetScale = new THREE.Vector3(boneLength * 0.5, boneLength, boneLength * 0.5);
+                p.scale.lerpVectors(p.userData.originalScale, targetScale, morphT);
+            }
+        });
+
+        // Toggle visibility per tab
+        parts.forEach(p => p.visible = (currentTab !== 'humanoid'));
+        
+        renderer.render(scene, camera);
+    }
+
+    window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+</script>
+</body>
+</html>
