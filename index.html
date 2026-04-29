@@ -3,31 +3,34 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Mecha Builder: Rig Restoration</title>
+    <title>Mecha Builder: Rig & Mapping Fixed</title>
     <style>
         body { margin: 0; background: #050505; color: white; font-family: 'Segoe UI', sans-serif; overflow: hidden; touch-action: none; user-select: none; }
-        
-        #nav-bar { position: absolute; top: 0; width: 100%; display: flex; background: #111; z-index: 999; border-bottom: 1px solid #333; height: 44px; }
+        #nav-bar { position: absolute; top: 0; width: 100%; display: flex; background: #111; z-index: 200; border-bottom: 1px solid #333; height: 44px; }
         .tab { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 11px; cursor: pointer; text-transform: uppercase; color: #666; border-right: 1px solid #222; }
         .tab.active { color: #00ffff; background: #1a1a1a; border-bottom: 2px solid #00ffff; }
 
         #ui-panel { position: absolute; right: 10px; top: 55px; width: 200px; background: rgba(15, 15, 15, 0.9); padding: 15px; border-radius: 8px; border: 1px solid #444; z-index: 150; }
         #bone-label { font-size: 14px; font-weight: bold; color: #ffff00; display: block; margin-bottom: 10px; text-align: center; border-bottom: 1px solid #333; padding-bottom: 5px;}
         label { display: block; font-size: 9px; color: #888; margin-top: 8px; text-transform: uppercase; }
-        input[type=range] { width: 100%; cursor: pointer; accent-color: #ffff00; }
-        .btn { width: 100%; padding: 8px; cursor: pointer; background: #222; color: white; border: 1px solid #444; border-radius: 4px; font-size: 9px; font-weight: bold; text-transform: uppercase; margin-top: 5px; }
+        input[type=range] { width: 100%; cursor: pointer; accent-color: #00ffff; }
+        .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-top: 10px; }
+        .btn { width: 100%; padding: 8px; cursor: pointer; background: #222; color: white; border: 1px solid #444; border-radius: 4px; font-size: 9px; font-weight: bold; text-transform: uppercase; }
         
         #build-controls { position: absolute; bottom: 20px; left: 20px; display: flex; flex-direction: column; gap: 10px; z-index: 150; }
         .build-btn { padding: 12px 20px; border-radius: 5px; border: none; font-weight: bold; cursor: pointer; text-transform: uppercase; font-size: 11px; }
+        #map-status { position: absolute; top: 50px; left: 50%; transform: translateX(-50%); color: #ffcc00; font-weight: bold; display: none; background: rgba(0,0,0,0.8); padding: 5px 15px; border-radius: 20px; border: 1px solid #ffcc00; z-index: 100;}
     </style>
 </head>
 <body>
 
 <div id="nav-bar">
-    <div id="tab-v" class="tab active">Build Vehicle</div>
-    <div id="tab-h" class="tab">Pose Humanoid</div>
-    <div id="tab-t" class="tab">Transform</div>
+    <div id="tab-v" class="tab active" onclick="setTab('vehicle')">Build Vehicle</div>
+    <div id="tab-h" class="tab" onclick="setTab('humanoid')">Pose Humanoid</div>
+    <div id="tab-t" class="tab" onclick="setTab('transform')">Transform</div>
 </div>
+
+<div id="map-status">MAPPING MODE: SELECT BOXES FOR <span id="target-map-name">NONE</span></div>
 
 <div id="ui-panel">
     <div id="pose-header" style="display:none;">
@@ -39,20 +42,25 @@
         <label>Swing X</label><input type="range" id="rotX" min="-3.14" max="3.14" step="0.01" value="0">
         <label>Twist Y</label><input type="range" id="rotY" min="-3.14" max="3.14" step="0.01" value="0">
         <label>Swing Z</label><input type="range" id="rotZ" min="-3.14" max="3.14" step="0.01" value="0">
+        <div class="btn-group">
+            <button class="btn" onclick="mirrorPose('L','R')">L→R</button>
+            <button class="btn" onclick="mirrorPose('R','L')">R→L</button>
+        </div>
     </div>
 
     <div id="box-controls">
-        <label>Box Scale</label>
-        <input type="range" id="sx" min="0.1" max="4" step="0.1" value="1">
-        <input type="range" id="sy" min="0.1" max="4" step="0.1" value="1">
-        <input type="range" id="sz" min="0.1" max="4" step="0.1" value="1">
-        <button class="btn" style="background:#b71c1c;" id="btn-delete">Delete Box</button>
+        <label id="mapping-info">Mapped to: Chest</label>
+        <label>Scale X</label><input type="range" id="sx" min="0.1" max="4" step="0.1" value="1">
+        <label>Scale Y</label><input type="range" id="sy" min="0.1" max="4" step="0.1" value="1">
+        <label>Scale Z</label><input type="range" id="sz" min="0.1" max="4" step="0.1" value="1">
+        <button class="btn" style="margin-top:10px; background:#b71c1c;" onclick="deleteBox()">Delete Box</button>
     </div>
 </div>
 
 <div id="build-controls">
-    <button class="build-btn" style="background:#2e7d32; color:white;" id="btn-add">+ Add Box</button>
-    <button id="skeleton-toggle" class="build-btn" style="background:#444; color:#fff;">Show in Vehicle: OFF</button>
+    <button class="build-btn" style="background:#2e7d32; color:white;" onclick="addBox()">+ Add Box</button>
+    <button class="build-btn" style="background:#ff8f00; color:white;" id="map-btn">Map Selection</button>
+    <button id="protect-btn" class="build-btn" style="background:#333; color:#00ffff; border:1px solid #00ffff;" onclick="toggleProtect()">Protect Part</button>
 </div>
 
 <script type="importmap">
@@ -85,11 +93,11 @@
     };
 
     let scene, camera, renderer, controls, raycaster;
-    let parts = [], pivots = {}, clickableBones = [];
+    let parts = [], pivots = {}, clickables = [];
     let currentPose = Object.fromEntries(Object.keys(config).map(n => [n, [0,0,0]]));
     let selectedBone = "Root", activeBox = null;
     let currentTab = 'vehicle', morphT = 0, morphTarget = 0;
-    let showInVehicle = false;
+    let isMapping = false;
 
     init();
     animate();
@@ -106,12 +114,23 @@
         raycaster = new THREE.Raycaster();
 
         scene.add(new THREE.GridHelper(10, 20, 0x333333, 0x222222));
-        scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+        scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+        const dLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        dLight.position.set(5,10,5);
+        scene.add(dLight);
 
+        // Build the Rig Visuals
         Object.keys(config).forEach(name => {
             const pivot = new THREE.Group();
             pivot.name = name;
             pivots[name] = pivot;
+
+            // Joint Marker
+            const dot = new THREE.Mesh(new THREE.SphereGeometry(0.06), new THREE.MeshBasicMaterial({color: 0x0088ff}));
+            dot.userData.boneName = name;
+            pivot.add(dot);
+            clickables.push(dot);
+
             if (config[name].p) pivots[config[name].p].add(pivot);
             else scene.add(pivot);
 
@@ -121,86 +140,129 @@
                 pivot.position.set(pData.d[0]*pData.l, pData.d[1]*pData.l, pData.d[2]*pData.l);
             }
 
-            // RESTORED: Blue Marker
-            const marker = new THREE.Mesh(new THREE.SphereGeometry(0.06), new THREE.MeshBasicMaterial({ color: 0x0088ff }));
-            marker.userData.isMarker = true;
-            marker.userData.boneName = name;
-            pivot.add(marker);
-            clickableBones.push(marker);
-
-            // RESTORED: Bone Cylinder
+            // Bone Cylinder
             if (config[name].l > 0) {
-                const boneMesh = new THREE.Mesh(
-                    new THREE.CylinderGeometry(0.03, 0.03, config[name].l, 8), 
-                    new THREE.MeshStandardMaterial({color: 0x666666})
-                );
-                boneMesh.position.set(config[name].d[0]*config[name].l/2, config[name].d[1]*config[name].l/2, config[name].d[2]*config[name].l/2);
-                if(config[name].d[0] !== 0) boneMesh.rotation.z = Math.PI/2;
-                if(config[name].d[2] !== 0) boneMesh.rotation.x = Math.PI/2;
-                boneMesh.userData.boneName = name;
-                pivot.add(boneMesh);
-                clickableBones.push(boneMesh);
+                const mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, config[name].l, 6), new THREE.MeshBasicMaterial({color: 0x555555}));
+                mesh.position.set(config[name].d[0]*config[name].l/2, config[name].d[1]*config[name].l/2, config[name].d[2]*config[name].l/2);
+                if(config[name].d[0] !== 0) mesh.rotation.z = Math.PI/2;
+                if(config[name].d[2] !== 0) mesh.rotation.x = Math.PI/2;
+                pivot.add(mesh);
             }
         });
 
-        setupEvents();
-        addBox();
-        setTab('vehicle');
-    }
-
-    function setupEvents() {
-        document.getElementById('tab-v').onclick = () => setTab('vehicle');
-        document.getElementById('tab-h').onclick = () => setTab('humanoid');
-        document.getElementById('tab-t').onclick = () => setTab('transform');
-        document.getElementById('btn-add').onclick = addBox;
-        document.getElementById('btn-delete').onclick = deleteBox;
-        document.getElementById('skeleton-toggle').onclick = () => {
-            showInVehicle = !showInVehicle;
-            document.getElementById('skeleton-toggle').innerText = "Show in Vehicle: " + (showInVehicle ? "ON" : "OFF");
-            document.getElementById('skeleton-toggle').style.background = showInVehicle ? "#00ffff" : "#444";
-            document.getElementById('skeleton-toggle').style.color = showInVehicle ? "#000" : "#fff";
+        window.addEventListener('pointerdown', onPointerDown);
+        document.getElementById('map-btn').onclick = () => {
+            isMapping = true;
+            document.getElementById('map-status').style.display = 'block';
+            document.getElementById('target-map-name').innerText = selectedBone;
         };
 
-        ['rotX', 'rotY', 'rotZ'].forEach((id, i) => {
-            document.getElementById(id).oninput = (e) => currentPose[selectedBone][i] = parseFloat(e.target.value);
-        });
-        window.addEventListener('pointerdown', onPointerDown);
-    }
-
-    function setTab(tab) {
-        currentTab = tab;
-        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-        document.getElementById(`tab-${tab.charAt(0)}`).classList.add('active');
-        document.getElementById('pose-header').style.display = (tab === 'humanoid') ? 'block' : 'none';
-        document.getElementById('pose-controls').style.display = (tab === 'humanoid') ? 'block' : 'none';
-        document.getElementById('box-controls').style.display = (tab === 'vehicle') ? 'block' : 'none';
-        document.getElementById('build-controls').style.display = (tab === 'vehicle') ? 'flex' : 'none';
-        morphTarget = (tab === 'transform') ? 1 : 0;
+        setupInputs();
+        addBox();
     }
 
     function addBox() {
-        const mesh = new THREE.Mesh(new THREE.BoxGeometry(1,1,1), new THREE.MeshStandardMaterial({ color: 0xffffff }));
-        mesh.position.set(0, 1, 0);
-        mesh.userData = { targetBone: "Chest", startPos: new THREE.Vector3(), startScale: new THREE.Vector3(1,1,1) };
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(1,1,1), new THREE.MeshPhongMaterial({ color: 0xffffff }));
+        mesh.position.set((Math.random()-0.5)*3, 1, (Math.random()-0.5)*3);
+        mesh.userData = { isProtected: false, startPos: new THREE.Vector3(), startScale: new THREE.Vector3(1,1,1), targetBone: "Chest" };
         scene.add(mesh);
         parts.push(mesh);
-        activeBox = mesh;
+        setActiveBox(mesh);
     }
 
-    function deleteBox() {
-        if (activeBox) { scene.remove(activeBox); parts = parts.filter(p => p !== activeBox); activeBox = parts[0] || null; }
+    function setActiveBox(mesh) {
+        if (activeBox) activeBox.material.emissive.setHex(0x000000);
+        activeBox = mesh;
+        activeBox.material.emissive.setHex(0x333333);
+        document.getElementById('mapping-info').innerText = "Mapped to: " + mesh.userData.targetBone;
+        ['sx','sy','sz'].forEach(id => document.getElementById(id).value = mesh.scale[id.charAt(1)]);
+        document.getElementById('protect-btn').style.background = mesh.userData.isProtected ? "#00ffff" : "#333";
+        document.getElementById('protect-btn').style.color = mesh.userData.isProtected ? "#000" : "#00ffff";
     }
+
+    function setupInputs() {
+        ['rotX', 'rotY', 'rotZ'].forEach((id, axis) => {
+            document.getElementById(id).oninput = (e) => {
+                currentPose[selectedBone][axis] = parseFloat(e.target.value);
+            };
+        });
+        ['sx','sy','sz'].forEach(id => {
+            document.getElementById(id).oninput = (e) => {
+                if (activeBox) activeBox.scale[id.charAt(1)] = parseFloat(e.target.value);
+            };
+        });
+    }
+
+    window.setTab = (tab) => {
+        currentTab = tab;
+        isMapping = false;
+        document.getElementById('map-status').style.display = 'none';
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.getElementById(`tab-${tab.charAt(0)}`).classList.add('active');
+        
+        document.getElementById('build-controls').style.display = (tab === 'vehicle') ? 'flex' : 'none';
+        document.getElementById('pose-controls').style.display = (tab === 'humanoid') ? 'block' : 'none';
+        document.getElementById('pose-header').style.display = (tab === 'humanoid') ? 'block' : 'none';
+        document.getElementById('box-controls').style.display = (tab === 'vehicle') ? 'block' : 'none';
+
+        if (tab === 'transform') {
+            morphTarget = 1;
+            parts.forEach(p => { p.userData.startPos.copy(p.position); p.userData.startScale.copy(p.scale); });
+        } else {
+            morphTarget = 0;
+        }
+    };
+
+    window.toggleProtect = () => {
+        if (!activeBox) return;
+        activeBox.userData.isProtected = !activeBox.userData.isProtected;
+        activeBox.material.color.set(activeBox.userData.isProtected ? 0x00ffff : 0xffffff);
+        setActiveBox(activeBox);
+    };
+
+    window.deleteBox = () => {
+        if (!activeBox) return;
+        scene.remove(activeBox);
+        parts = parts.filter(p => p !== activeBox);
+        activeBox = parts[0] || null;
+        if(activeBox) setActiveBox(activeBox);
+    };
+
+    window.mirrorPose = (from, to) => {
+        Object.keys(currentPose).forEach(name => {
+            let target = null;
+            if (name.includes(`_${from}`)) target = name.replace(`_${from}`, `_${to}`);
+            else if (name.startsWith(`${from}_`)) target = name.replace(`${from}_`, `${to}_`);
+            if (target && currentPose[target]) {
+                const src = currentPose[name];
+                currentPose[target] = [src[0], -src[1], -src[2]];
+            }
+        });
+    };
 
     function onPointerDown(e) {
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON') return;
         const mouse = new THREE.Vector2((e.clientX/window.innerWidth)*2-1, -(e.clientY/window.innerHeight)*2+1);
         raycaster.setFromCamera(mouse, camera);
         
-        const hitBone = raycaster.intersectObjects(clickableBones)[0];
-        if (hitBone && currentTab === 'humanoid') { 
+        const hitPart = raycaster.intersectObjects(parts)[0];
+        if (hitPart) { 
+            setActiveBox(hitPart.object); 
+            if (isMapping) {
+                hitPart.object.userData.targetBone = selectedBone;
+                isMapping = false;
+                document.getElementById('map-status').style.display = 'none';
+                document.getElementById('mapping-info').innerText = "Mapped to: " + selectedBone;
+            }
+            return; 
+        }
+
+        const hitBone = raycaster.intersectObjects(clickables)[0];
+        if (hitBone) { 
             selectedBone = hitBone.object.userData.boneName;
             document.getElementById('bone-label').innerText = selectedBone;
             ['rotX', 'rotY', 'rotZ'].forEach((id, i) => document.getElementById(id).value = currentPose[selectedBone][i]);
+            if (isMapping) document.getElementById('target-map-name').innerText = selectedBone;
         }
     }
 
@@ -209,40 +271,42 @@
         controls.update();
         morphT = THREE.MathUtils.lerp(morphT, morphTarget, 0.1);
 
+        // Update Joint Rotations
         Object.keys(pivots).forEach(name => {
             const pivot = pivots[name];
             const [x, y, z] = currentPose[name];
             const boneDir = new THREE.Vector3().fromArray(config[name].d).normalize();
+            
             pivot.quaternion.set(0, 0, 0, 1);
             pivot.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), z));
             let swingAxis = (Math.abs(boneDir.y) > 0.5 || name === "Root" || name === "Spine") ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
             pivot.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(swingAxis, x));
             pivot.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(boneDir.length() === 0 ? new THREE.Vector3(0,1,0) : boneDir, y));
 
-            pivot.children.forEach(c => {
-                if (c.material) {
-                    // TAB VISIBILITY
-                    c.visible = (currentTab === 'humanoid') || (currentTab === 'vehicle' && showInVehicle);
-                    
-                    // HIGHLIGHT / COLOR
-                    if (c.userData.boneName === selectedBone) {
-                        c.material.emissive = new THREE.Color(0x00ffff);
-                        c.material.emissiveIntensity = 1;
-                    } else {
-                        c.material.emissive = new THREE.Color(0x000000);
-                        if (c.userData.isMarker) c.material.color.setHex(0x0088ff);
-                        else c.material.color.setHex(0x666666);
-                    }
+            // Rig Visibility & Selection Glow
+            pivot.traverse(c => {
+                if (c.isMesh) {
+                    c.visible = (currentTab !== 'transform'); // Hide rig in transform view
+                    if (c.userData.boneName === selectedBone) c.material.color.set(0xffff00);
+                    else if (c.material.type === 'MeshBasicMaterial') c.material.color.set(0x0088ff);
                 }
             });
         });
 
+        const worldPos = new THREE.Vector3();
+        const worldQuat = new THREE.Quaternion();
         parts.forEach(p => {
-            const bone = pivots[p.userData.targetBone];
-            const worldPos = new THREE.Vector3().setFromMatrixPosition(bone.matrixWorld);
-            p.position.lerpVectors(new THREE.Vector3(0,1,0), worldPos, morphT);
-            p.quaternion.slerp(bone.getWorldQuaternion(new THREE.Quaternion()), morphT);
-            p.visible = (currentTab !== 'humanoid');
+            const boneName = p.userData.targetBone || "Chest";
+            const bone = pivots[boneName];
+            bone.updateMatrixWorld();
+            worldPos.setFromMatrixPosition(bone.matrixWorld);
+            p.position.lerpVectors(p.userData.startPos, worldPos, morphT);
+            
+            if (!p.userData.isProtected) {
+                const l = config[boneName].l || 0.5;
+                p.scale.lerpVectors(p.userData.startScale, new THREE.Vector3(l*0.4, l, l*0.4), morphT);
+            }
+            p.quaternion.slerp(bone.getWorldQuaternion(worldQuat), morphT);
         });
 
         renderer.render(scene, camera);
