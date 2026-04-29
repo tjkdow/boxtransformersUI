@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Mecha Builder: Tab Fix & Mirror Sync</title>
+    <title>Mecha Builder: Smart Toggle</title>
     <style>
         body { margin: 0; background: #050505; color: white; font-family: 'Segoe UI', sans-serif; overflow: hidden; touch-action: none; user-select: none; }
         
@@ -20,7 +20,7 @@
         
         #build-controls { position: absolute; bottom: 20px; left: 20px; display: flex; flex-direction: column; gap: 10px; z-index: 150; }
         .build-btn { padding: 12px 20px; border-radius: 5px; border: none; font-weight: bold; cursor: pointer; text-transform: uppercase; font-size: 11px; }
-        #map-status { position: absolute; top: 50px; left: 50%; transform: translateX(-50%); color: #ffcc00; font-weight: bold; display: none; background: rgba(0,0,0,0.8); padding: 5px 15px; border-radius: 20px; border: 1px solid #ffcc00; z-index: 100;}
+        #map-status { position: absolute; top: 50px; left: 50%; transform: translateX(-50%); color: #ffcc00; font-weight: bold; display: none; background: rgba(0,0,0,0.8); padding: 5px 15px; border-radius: 20px; border: 1px solid #ffcc00; z-index: 1000;}
     </style>
 </head>
 <body>
@@ -61,6 +61,7 @@
 <div id="build-controls">
     <button class="build-btn" style="background:#2e7d32; color:white;" id="btn-add">+ Add Box</button>
     <button class="build-btn" style="background:#ff8f00; color:white;" id="btn-map">Map to Chest</button>
+    <button id="skeleton-toggle" class="build-btn" style="background:#444; color:#fff;">Show Skeleton: OFF</button>
     <button id="protect-btn" class="build-btn" style="background:#333; color:#00ffff; border:1px solid #00ffff;">Protect Part</button>
 </div>
 
@@ -99,6 +100,7 @@
     let selectedBone = "Root", activeBox = null;
     let currentTab = 'vehicle', morphT = 0, morphTarget = 0;
     let isMapping = false, mappingTargetBone = "";
+    let skeletonAlwaysVisible = false;
 
     init();
     animate();
@@ -115,7 +117,7 @@
         raycaster = new THREE.Raycaster();
 
         scene.add(new THREE.GridHelper(10, 20, 0x333333, 0x222222));
-        scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+        scene.add(new THREE.AmbientLight(0xffffff, 0.6));
         const dLight = new THREE.DirectionalLight(0xffffff, 0.8);
         dLight.position.set(5,10,5);
         scene.add(dLight);
@@ -137,7 +139,7 @@
             if (config[name].l > 0) {
                 const boneMesh = new THREE.Mesh(
                     new THREE.CylinderGeometry(0.04, 0.04, config[name].l, 8), 
-                    new THREE.MeshStandardMaterial({color: 0x555555, emissive: 0x000000})
+                    new THREE.MeshStandardMaterial({color: 0x555555, emissive: 0x000000, transparent: true, opacity: 1})
                 );
                 boneMesh.position.set(config[name].d[0]*config[name].l/2, config[name].d[1]*config[name].l/2, config[name].d[2]*config[name].l/2);
                 if(config[name].d[0] !== 0) boneMesh.rotation.z = Math.PI/2;
@@ -146,7 +148,7 @@
                 pivot.add(boneMesh);
                 clickableBones.push(boneMesh);
             } else {
-                const dot = new THREE.Mesh(new THREE.SphereGeometry(0.08), new THREE.MeshBasicMaterial({color: 0xffffff}));
+                const dot = new THREE.Mesh(new THREE.SphereGeometry(0.08), new THREE.MeshBasicMaterial({color: 0xffffff, transparent: true, opacity: 1}));
                 dot.userData.boneName = name;
                 pivot.add(dot);
                 clickableBones.push(dot);
@@ -166,6 +168,13 @@
         document.getElementById('btn-map').onclick = () => startMapping('Chest');
         document.getElementById('btn-delete').onclick = deleteBox;
         document.getElementById('protect-btn').onclick = toggleProtect;
+
+        document.getElementById('skeleton-toggle').onclick = () => {
+            skeletonAlwaysVisible = !skeletonAlwaysVisible;
+            document.getElementById('skeleton-toggle').innerText = "Show Skeleton: " + (skeletonAlwaysVisible ? "ON" : "OFF");
+            document.getElementById('skeleton-toggle').style.background = skeletonAlwaysVisible ? "#00ffff" : "#444";
+            document.getElementById('skeleton-toggle').style.color = skeletonAlwaysVisible ? "#000" : "#fff";
+        };
         
         document.getElementById('btn-mirror-lr').onclick = () => mirrorPose('L', 'R');
         document.getElementById('btn-mirror-rl').onclick = () => mirrorPose('R', 'L');
@@ -253,7 +262,6 @@
             if (target && currentPose[target]) {
                 const src = currentPose[name];
                 let mirrorX = src[0];
-                // Mirror logic for limbs aligned on local X (Arms)
                 if (name.toLowerCase().includes('arm')) mirrorX = -src[0];
                 currentPose[target] = [mirrorX, -src[1], -src[2]];
             }
@@ -271,8 +279,10 @@
                 hitPart.object.userData.targetBone = mappingTargetBone;
                 isMapping = false;
                 document.getElementById('map-status').style.display = 'none';
+                setActiveBox(hitPart.object);
+            } else {
+                setActiveBox(hitPart.object); 
             }
-            setActiveBox(hitPart.object); 
             return; 
         }
 
@@ -301,8 +311,14 @@
             pivot.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(boneDir.length() === 0 ? new THREE.Vector3(0,1,0) : boneDir, y));
 
             pivot.children.forEach(c => {
-                if (c.material && c.userData.boneName) {
-                    c.material.emissive.setHex(name === selectedBone ? 0xaaaa00 : 0x000000);
+                if (c.material) {
+                    // RIG VISIBILITY LOGIC
+                    let shouldBeVisible = (currentTab === 'humanoid') || (currentTab === 'vehicle' && skeletonAlwaysVisible);
+                    c.visible = shouldBeVisible;
+                    c.material.opacity = (currentTab === 'humanoid') ? 1.0 : 0.3;
+                    if (c.userData.boneName) {
+                        c.material.emissive.setHex(name === selectedBone ? 0xaaaa00 : 0x000000);
+                    }
                 }
             });
         });
@@ -312,15 +328,15 @@
             bone.updateMatrixWorld();
             const worldPos = new THREE.Vector3().setFromMatrixPosition(bone.matrixWorld);
             p.position.lerpVectors(p.userData.startPos, worldPos, morphT);
+            
             if (!p.userData.isProtected) {
                 const l = config[p.userData.targetBone].l || 0.5;
                 p.scale.lerpVectors(p.userData.startScale, new THREE.Vector3(l*0.4, l, l*0.4), morphT);
             }
             p.quaternion.slerp(bone.getWorldQuaternion(new THREE.Quaternion()), morphT);
+            p.visible = (currentTab !== 'humanoid');
         });
 
-        clickableBones.forEach(b => b.visible = (currentTab === 'humanoid'));
-        parts.forEach(p => p.visible = (currentTab !== 'humanoid'));
         renderer.render(scene, camera);
     }
 </script>
