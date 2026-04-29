@@ -3,11 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Mecha Builder: High-Vis Selection</title>
+    <title>Mecha Builder: Tab Fix & Mirror Sync</title>
     <style>
         body { margin: 0; background: #050505; color: white; font-family: 'Segoe UI', sans-serif; overflow: hidden; touch-action: none; user-select: none; }
-        #nav-bar { position: absolute; top: 0; width: 100%; display: flex; background: #111; z-index: 200; border-bottom: 1px solid #333; height: 44px; }
-        .tab { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 11px; cursor: pointer; text-transform: uppercase; color: #666; border-right: 1px solid #222; }
+        
+        #nav-bar { position: absolute; top: 0; width: 100%; display: flex; background: #111; z-index: 999; border-bottom: 1px solid #333; height: 44px; }
+        .tab { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 11px; cursor: pointer; text-transform: uppercase; color: #666; border-right: 1px solid #222; pointer-events: auto; }
         .tab.active { color: #00ffff; background: #1a1a1a; border-bottom: 2px solid #00ffff; }
 
         #ui-panel { position: absolute; right: 10px; top: 55px; width: 200px; background: rgba(15, 15, 15, 0.9); padding: 15px; border-radius: 8px; border: 1px solid #444; z-index: 150; }
@@ -25,9 +26,9 @@
 <body>
 
 <div id="nav-bar">
-    <div class="tab active" onclick="setTab('vehicle')">Build Vehicle</div>
-    <div class="tab" onclick="setTab('humanoid')">Pose Humanoid</div>
-    <div class="tab" onclick="setTab('transform')">Transform</div>
+    <div id="tab-v" class="tab active">Build Vehicle</div>
+    <div id="tab-h" class="tab">Pose Humanoid</div>
+    <div id="tab-t" class="tab">Transform</div>
 </div>
 
 <div id="map-status">MAPPING MODE: SELECT BOXES FOR <span id="target-map-name">NONE</span></div>
@@ -43,8 +44,8 @@
         <label>Local Twist</label><input type="range" id="rotY" min="-3.14" max="3.14" step="0.01" value="0">
         <label>Swing Z (Side/Side)</label><input type="range" id="rotZ" min="-3.14" max="3.14" step="0.01" value="0">
         <div class="btn-group">
-            <button class="btn" onclick="mirrorPose('L','R')">L→R</button>
-            <button class="btn" onclick="mirrorPose('R','L')">R→L</button>
+            <button class="btn" id="btn-mirror-lr">L→R</button>
+            <button class="btn" id="btn-mirror-rl">R→L</button>
         </div>
     </div>
 
@@ -53,14 +54,14 @@
         <label>Width</label><input type="range" id="sx" min="0.1" max="4" step="0.1" value="1">
         <label>Height</label><input type="range" id="sy" min="0.1" max="4" step="0.1" value="1">
         <label>Length</label><input type="range" id="sz" min="0.1" max="4" step="0.1" value="1">
-        <button class="btn" style="margin-top:10px; background:#b71c1c;" onclick="deleteBox()">Delete Box</button>
+        <button class="btn" style="margin-top:10px; background:#b71c1c;" id="btn-delete">Delete Box</button>
     </div>
 </div>
 
 <div id="build-controls">
-    <button class="build-btn" style="background:#2e7d32; color:white;" onclick="addBox()">+ Add Box</button>
-    <button class="build-btn" style="background:#ff8f00; color:white;" onclick="startMapping('Chest')">Map to Chest</button>
-    <button id="protect-btn" class="build-btn" style="background:#333; color:#00ffff; border:1px solid #00ffff;" onclick="toggleProtect()">Protect Part</button>
+    <button class="build-btn" style="background:#2e7d32; color:white;" id="btn-add">+ Add Box</button>
+    <button class="build-btn" style="background:#ff8f00; color:white;" id="btn-map">Map to Chest</button>
+    <button id="protect-btn" class="build-btn" style="background:#333; color:#00ffff; border:1px solid #00ffff;">Protect Part</button>
 </div>
 
 <script type="importmap">
@@ -133,28 +134,18 @@
                 pivot.position.set(pData.d[0]*pData.l, pData.d[1]*pData.l, pData.d[2]*pData.l);
             }
 
-            // The Cylinder Bone Mesh (Now Selectable)
             if (config[name].l > 0) {
                 const boneMesh = new THREE.Mesh(
                     new THREE.CylinderGeometry(0.04, 0.04, config[name].l, 8), 
                     new THREE.MeshStandardMaterial({color: 0x555555, emissive: 0x000000})
                 );
                 boneMesh.position.set(config[name].d[0]*config[name].l/2, config[name].d[1]*config[name].l/2, config[name].d[2]*config[name].l/2);
-                
                 if(config[name].d[0] !== 0) boneMesh.rotation.z = Math.PI/2;
                 if(config[name].d[2] !== 0) boneMesh.rotation.x = Math.PI/2;
-                
                 boneMesh.userData.boneName = name;
                 pivot.add(boneMesh);
                 clickableBones.push(boneMesh);
-
-                // Fin indicator
-                const fin = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.1, 0.03), new THREE.MeshBasicMaterial({color: 0x00ffff}));
-                fin.position.copy(boneMesh.position);
-                fin.position.z += 0.06; fin.rotation.x = Math.PI/2;
-                pivot.add(fin);
             } else {
-                // Root/Small joints
                 const dot = new THREE.Mesh(new THREE.SphereGeometry(0.08), new THREE.MeshBasicMaterial({color: 0xffffff}));
                 dot.userData.boneName = name;
                 pivot.add(dot);
@@ -162,9 +153,58 @@
             }
         });
 
-        window.addEventListener('pointerdown', onPointerDown);
-        setupInputs();
+        setupDOMEvents();
         addBox();
+    }
+
+    function setupDOMEvents() {
+        document.getElementById('tab-v').onclick = () => setTab('vehicle');
+        document.getElementById('tab-h').onclick = () => setTab('humanoid');
+        document.getElementById('tab-t').onclick = () => setTab('transform');
+        
+        document.getElementById('btn-add').onclick = addBox;
+        document.getElementById('btn-map').onclick = () => startMapping('Chest');
+        document.getElementById('btn-delete').onclick = deleteBox;
+        document.getElementById('protect-btn').onclick = toggleProtect;
+        
+        document.getElementById('btn-mirror-lr').onclick = () => mirrorPose('L', 'R');
+        document.getElementById('btn-mirror-rl').onclick = () => mirrorPose('R', 'L');
+
+        ['rotX', 'rotY', 'rotZ'].forEach((id, axis) => {
+            document.getElementById(id).oninput = (e) => {
+                currentPose[selectedBone][axis] = parseFloat(e.target.value);
+            };
+        });
+        ['sx', 'sy', 'sz'].forEach(id => {
+            document.getElementById(id).oninput = (e) => {
+                if (activeBox) activeBox.scale[id.charAt(1)] = parseFloat(e.target.value);
+            };
+        });
+
+        window.addEventListener('pointerdown', onPointerDown);
+    }
+
+    function setTab(tab) {
+        currentTab = tab;
+        isMapping = false;
+        document.getElementById('map-status').style.display = 'none';
+        
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        if(tab === 'vehicle') document.getElementById('tab-v').classList.add('active');
+        if(tab === 'humanoid') document.getElementById('tab-h').classList.add('active');
+        if(tab === 'transform') document.getElementById('tab-t').classList.add('active');
+
+        document.getElementById('build-controls').style.display = (tab === 'vehicle') ? 'flex' : 'none';
+        document.getElementById('pose-controls').style.display = (tab === 'humanoid') ? 'block' : 'none';
+        document.getElementById('pose-header').style.display = (tab === 'humanoid') ? 'block' : 'none';
+        document.getElementById('box-controls').style.display = (tab === 'vehicle') ? 'block' : 'none';
+
+        if (tab === 'transform') {
+            morphTarget = 1;
+            parts.forEach(p => { p.userData.startPos.copy(p.position); p.userData.startScale.copy(p.scale); });
+        } else {
+            morphTarget = 0;
+        }
     }
 
     function addBox() {
@@ -184,46 +224,27 @@
         ['sx','sy','sz'].forEach(id => document.getElementById(id).value = mesh.scale[id.charAt(1)]);
     }
 
-    window.startMapping = (boneName) => {
+    function toggleProtect() {
+        if (!activeBox) return;
+        activeBox.userData.isProtected = !activeBox.userData.isProtected;
+        activeBox.material.color.set(activeBox.userData.isProtected ? 0x00ffff : 0xffffff);
+    }
+
+    function deleteBox() {
+        if (!activeBox) return;
+        scene.remove(activeBox);
+        parts = parts.filter(p => p !== activeBox);
+        activeBox = parts[0] || null;
+        if(activeBox) setActiveBox(activeBox);
+    }
+
+    function startMapping(boneName) {
         isMapping = true; mappingTargetBone = boneName;
         document.getElementById('map-status').style.display = 'block';
         document.getElementById('target-map-name').innerText = boneName;
-    };
-
-    function setupInputs() {
-        ['rotX', 'rotY', 'rotZ'].forEach((id, axis) => {
-            document.getElementById(id).oninput = (e) => {
-                currentPose[selectedBone][axis] = parseFloat(e.target.value);
-            };
-        });
-        ['sx','sy','sz'].forEach(id => {
-            document.getElementById(id).oninput = (e) => {
-                if (activeBox) activeBox.scale[id.charAt(1)] = parseFloat(e.target.value);
-            };
-        });
     }
 
-    window.setTab = (tab) => {
-        currentTab = tab;
-        isMapping = false;
-        document.getElementById('map-status').style.display = 'none';
-        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-        event.currentTarget.classList.add('active');
-        
-        document.getElementById('build-controls').style.display = (tab === 'vehicle') ? 'flex' : 'none';
-        document.getElementById('pose-controls').style.display = (tab === 'humanoid') ? 'block' : 'none';
-        document.getElementById('pose-header').style.display = (tab === 'humanoid') ? 'block' : 'none';
-        document.getElementById('box-controls').style.display = (tab === 'vehicle') ? 'block' : 'none';
-
-        if (tab === 'transform') {
-            morphTarget = 1;
-            parts.forEach(p => { p.userData.startPos.copy(p.position); p.userData.startScale.copy(p.scale); });
-        } else {
-            morphTarget = 0;
-        }
-    };
-
-    window.mirrorPose = (from, to) => {
+    function mirrorPose(from, to) {
         Object.keys(currentPose).forEach(name => {
             let target = null;
             if (name.includes(`_${from}`)) target = name.replace(`_${from}`, `_${to}`);
@@ -231,17 +252,16 @@
             
             if (target && currentPose[target]) {
                 const src = currentPose[name];
-                // For arms/shoulders, X swing usually needs inversion to match "forward"
                 let mirrorX = src[0];
-                if (name.toLowerCase().includes('arm') || name.toLowerCase().includes('forearm')) mirrorX = -src[0];
-                
+                // Mirror logic for limbs aligned on local X (Arms)
+                if (name.toLowerCase().includes('arm')) mirrorX = -src[0];
                 currentPose[target] = [mirrorX, -src[1], -src[2]];
             }
         });
-    };
+    }
 
     function onPointerDown(e) {
-        if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON') return;
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON' || e.target.classList.contains('tab')) return;
         const mouse = new THREE.Vector2((e.clientX/window.innerWidth)*2-1, -(e.clientY/window.innerHeight)*2+1);
         raycaster.setFromCamera(mouse, camera);
         
@@ -280,7 +300,6 @@
             pivot.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(swingAxis, x));
             pivot.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(boneDir.length() === 0 ? new THREE.Vector3(0,1,0) : boneDir, y));
 
-            // High-Vis Selection Glow
             pivot.children.forEach(c => {
                 if (c.material && c.userData.boneName) {
                     c.material.emissive.setHex(name === selectedBone ? 0xaaaa00 : 0x000000);
