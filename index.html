@@ -1,0 +1,31 @@
+// --- HUMANOID ONLY TAB FEATURES ---
+
+// 1. The Skeletal Structure (from your provided code)
+const boneConfig = {
+    "Root":      { p: null,    l: 0,    d: [0,0,0] }, 
+    "Chest":     { p: "Spine",  l: 0.7,  d: [0,1,0] },
+    // ... rest of your config ...
+};
+
+// 2. Added: Volume Envelopes (The "Mold")
+// This creates a invisible bounding box for each bone to handle the subtraction math.
+function createVolumeMolds() {
+    Object.keys(boneConfig).forEach(name => {
+        const cfg = boneConfig[name];
+        if (cfg.l > 0) {
+            // This represents the 'Search Area' for voxels
+            const moldGeom = new THREE.CylinderGeometry(cfg.l * 0.4, cfg.l * 0.3, cfg.l, 8);
+            const moldMat = new THREE.MeshBasicMaterial({ 
+                color: 0x00ffff, 
+                wireframe: true, 
+                transparent: true, 
+                opacity: 0.1 
+            });
+            const mold = new THREE.Mesh(moldGeom, moldMat);
+            
+            // Align with the bone cylinder logic from your code
+            mold.position.set(cfg.d[0]*cfg.l/2, cfg.d[1]*cfg.l/2, cfg.d[2]*cfg.l/2);
+            pivots[name].add(mold);
+        }
+    });
+}
