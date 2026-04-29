@@ -1,31 +1,46 @@
-// --- HUMANOID ONLY TAB FEATURES ---
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Voxel Morph Rig</title>
+    <style>
+        body { margin: 0; background: #050505; color: white; font-family: sans-serif; overflow: hidden; touch-action: none; }
+        
+        /* Tab Navigation */
+        .tab-bar { position: absolute; top: 0; width: 100%; display: flex; background: #111; z-index: 100; border-bottom: 1px solid #333; }
+        .tab { flex: 1; padding: 15px; text-align: center; font-size: 12px; cursor: pointer; text-transform: uppercase; letter-spacing: 1px; color: #888; }
+        .tab.active { color: #00ffff; border-bottom: 2px solid #00ffff; background: #1a1a1a; }
 
-// 1. The Skeletal Structure (from your provided code)
-const boneConfig = {
-    "Root":      { p: null,    l: 0,    d: [0,0,0] }, 
-    "Chest":     { p: "Spine",  l: 0.7,  d: [0,1,0] },
-    // ... rest of your config ...
-};
+        /* HUD UI */
+        #ui-controls { position: absolute; bottom: 20px; width: 100%; display: flex; flex-direction: column; align-items: center; gap: 10px; pointer-events: none; }
+        .btn { pointer-events: auto; padding: 12px 24px; border-radius: 30px; border: none; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        .btn-primary { background: #00ffff; color: #000; }
+        .btn-secondary { background: #333; color: #fff; }
+        .btn-transform { background: #ff0055; color: #fff; width: 80%; max-width: 300px; }
+        
+        #canvas-container { width: 100vw; height: 100vh; }
+    </style>
+</head>
+<body>
 
-// 2. Added: Volume Envelopes (The "Mold")
-// This creates a invisible bounding box for each bone to handle the subtraction math.
-function createVolumeMolds() {
-    Object.keys(boneConfig).forEach(name => {
-        const cfg = boneConfig[name];
-        if (cfg.l > 0) {
-            // This represents the 'Search Area' for voxels
-            const moldGeom = new THREE.CylinderGeometry(cfg.l * 0.4, cfg.l * 0.3, cfg.l, 8);
-            const moldMat = new THREE.MeshBasicMaterial({ 
-                color: 0x00ffff, 
-                wireframe: true, 
-                transparent: true, 
-                opacity: 0.1 
-            });
-            const mold = new THREE.Mesh(moldGeom, moldMat);
-            
-            // Align with the bone cylinder logic from your code
-            mold.position.set(cfg.d[0]*cfg.l/2, cfg.d[1]*cfg.l/2, cfg.d[2]*cfg.l/2);
-            pivots[name].add(mold);
-        }
-    });
-}
+<nav class="tab-bar">
+    <div class="tab" onclick="switchTab('vehicle')">Vehicle</div>
+    <div class="tab" onclick="switchTab('humanoid')">Humanoid</div>
+    <div class="tab" onclick="switchTab('side')">Side-by-Side</div>
+    <div class="tab" onclick="switchTab('transform')" id="tab-transform">Transform</div>
+</nav>
+
+<div id="ui-controls">
+    <button class="btn btn-secondary" id="select-mode" onclick="toggleSelectMode()">SELECT KEY PARTS</button>
+    <button class="btn btn-transform" onclick="triggerTransform()">EXECUTE MORPH</button>
+</div>
+
+<div id="canvas-container"></div>
+
+<script type="importmap">
+    { "imports": { 
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js", 
+        "controls": "https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js" 
+    } }
+</script>
