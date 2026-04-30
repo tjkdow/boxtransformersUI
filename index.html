@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Mecha Lab: Independent Mirroring</title>
+    <title>Mecha Lab: Fixed Rig & Gizmo</title>
     <style>
         body { margin: 0; background: #050505; color: white; font-family: 'Segoe UI', sans-serif; overflow: hidden; touch-action: none; user-select: none; }
         #nav-bar { position: absolute; top: 0; width: 100%; display: flex; background: #111; z-index: 200; border-bottom: 1px solid #333; height: 40px; }
@@ -35,7 +35,6 @@
 
 <div id="ui">
     <div id="bone-label">Select Something</div>
-    
     <button id="btn-mirror-toggle" onclick="toggleMirror()" style="width:100%; margin-bottom:10px;">Mirror: OFF</button>
 
     <div class="section-label">Pose / Bone Rotation</div>
@@ -79,13 +78,17 @@
 
     const JOINT_CFG = {
         "Root": { p: null, l: 0, d: [0,0,0] }, 
-        "Pelvis": { p: "Root", l: 0, d: [0,0,0], offset: [0, 2, 0] }, 
-        "Spine": { p: "Root", l: 0.8, d: [0,1,0], offset: [0, 2, 0] }, 
-        "Chest": { p: "Spine", l: 0.7, d: [0,1,0] }, "Neck": { p: "Chest", l: 0.2, d: [0,1,0] }, "Head": { p: "Neck", l: 0.4, d: [0,1,0] },
+        "Pelvis": { p: "Root", l: 0, d: [0,0,0], offset: [0, 1.8, 0] }, 
+        "Spine": { p: "Pelvis", l: 0.8, d: [0,1,0], offset: [0, 0, 0] }, 
+        "Chest": { p: "Spine", l: 0.7, d: [0,1,0] }, 
+        "Neck": { p: "Chest", l: 0.2, d: [0,1,0] }, 
+        "Head": { p: "Neck", l: 0.4, d: [0,1,0] },
         "L_Arm": { p: "Chest", l: 0.7, d: [1,0,0] }, "L_Forearm": { p: "L_Arm", l: 0.6, d: [1,0,0] },
         "R_Arm": { p: "Chest", l: 0.7, d: [-1,0,0] }, "R_Forearm": { p: "R_Arm", l: 0.6, d: [-1,0,0] },
-        "L_Thigh": { p: "Pelvis", l: 1.1, d: [0.3,-1,0] }, "L_Calf": { p: "L_Thigh", l: 0.9, d: [0,-1,0] }, 
-        "R_Thigh": { p: "Pelvis", l: 1.1, d: [-0.3,-1,0] }, "R_Calf": { p: "R_Thigh", l: 0.9, d: [0,-1,0] }
+        "L_Thigh": { p: "Pelvis", l: 1.1, d: [0,-1,0], offset: [0.3, 0, 0] }, 
+        "L_Calf": { p: "L_Thigh", l: 0.9, d: [0,-1,0] }, 
+        "R_Thigh": { p: "Pelvis", l: 1.1, d: [0,-1,0], offset: [-0.3, 0, 0] }, 
+        "R_Calf": { p: "R_Thigh", l: 0.9, d: [0,-1,0] }
     };
 
     let currentTab = 'vehicle';
@@ -94,8 +97,6 @@
         humanoid: { mirror: false, activeObj: null }
     };
 
-    let selectedBoneName = null, activeRig = null;
-    
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 100);
     camera.position.set(10, 5, 15);
@@ -107,6 +108,11 @@
     const transformGizmo = new TransformControls(camera, renderer.domElement);
     scene.add(new THREE.GridHelper(40, 40, 0x333333, 0x222222));
     scene.add(transformGizmo);
+
+    // LOCK CONTROLS WHEN USING GIZMO
+    transformGizmo.addEventListener('dragging-changed', (e) => {
+        controls.enabled = !e.value;
+    });
 
     const mirrorLine = new THREE.Line(
         new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,20), new THREE.Vector3(0,0,-20)]),
@@ -136,7 +142,7 @@
                 const cfg = JOINT_CFG[name];
                 
                 const dot = new THREE.Mesh(
-                    name === "Root" ? new THREE.BoxGeometry(0.3, 0.05, 0.3) : new THREE.SphereGeometry(0.06),
+                    name === "Root" ? new THREE.BoxGeometry(0.4, 0.05, 0.4) : new THREE.SphereGeometry(0.06),
                     new THREE.MeshStandardMaterial({color: isMirror ? 0x8888ff : 0xffffff, transparent: isMirror, opacity: isMirror ? 0.6 : 1})
                 );
                 dot.userData = { type: 'bone', boneName: name, rig: this };
@@ -147,7 +153,10 @@
                 else {
                     const parentP = this.pivots[cfg.p];
                     if (cfg.offset) pivot.position.set(...cfg.offset);
-                    else pivot.position.set(JOINT_CFG[cfg.p].d[0]*JOINT_CFG[cfg.p].l, JOINT_CFG[cfg.p].d[1]*JOINT_CFG[cfg.p].l, JOINT_CFG[cfg.p].d[2]*JOINT_CFG[cfg.p].l);
+                    else {
+                        const pCfg = JOINT_CFG[cfg.p];
+                        pivot.position.set(pCfg.d[0]*pCfg.l, pCfg.d[1]*pCfg.l, pCfg.d[2]*pCfg.l);
+                    }
                     parentP.add(pivot);
                     
                     if (cfg.l > 0) {
@@ -173,7 +182,7 @@
                 p.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(sAxis, x));
                 p.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(d.length()===0?new THREE.Vector3(0,1,0):d, y));
                 
-                const isSelected = (this === tabState[currentTab].activeObj?.userData.rig && name === selectedBoneName);
+                const isSelected = (this === tabState[currentTab].activeObj?.userData.rig && name === (tabState[currentTab].activeObj?.userData.boneName));
                 this.visuals[name].material.emissive.setHex(isSelected ? 0xffff00 : 0x000000);
             });
 
@@ -192,7 +201,6 @@
         const b = new THREE.Mesh(new THREE.BoxGeometry(1,1,1), new THREE.MeshStandardMaterial({color: 0x444444}));
         b.userData = { type: 'box' };
         scene.add(b); boxes.push(b);
-
         if (tabState.vehicle.mirror) {
             const m = new THREE.Mesh(b.geometry, new THREE.MeshStandardMaterial({color: 0x8888ff, transparent: true, opacity: 0.5}));
             m.userData = { type: 'box', isMirror: true };
@@ -205,10 +213,7 @@
     window.spawnVehicleRig = () => {
         const r = new RigInstance(false);
         r.group.position.set(2, 0, 0);
-        if (tabState.vehicle.mirror) {
-            const m = new RigInstance(false, true);
-            r.mirrorPartner = m;
-        }
+        if (tabState.vehicle.mirror) r.mirrorPartner = new RigInstance(false, true);
         selectObject(r.visuals["Root"]);
     };
 
@@ -220,7 +225,6 @@
         tabState[currentTab].activeObj = obj;
         if (!obj || obj.userData.isMirror) {
             transformGizmo.detach();
-            selectedBoneName = null; activeRig = null;
             document.getElementById('bone-label').innerText = "None";
             return;
         }
@@ -228,20 +232,20 @@
         if (obj.userData.type === 'box') {
             transformGizmo.attach(obj);
             obj.material.emissive.setHex(0x00ffff);
-            activeRig = null;
-            selectedBoneName = "BOX PART";
+            document.getElementById('bone-label').innerText = "BOX PART";
         } else if (obj.userData.type === 'bone') {
-            activeRig = obj.userData.rig;
-            selectedBoneName = obj.userData.boneName;
-            if (currentTab === 'vehicle') transformGizmo.attach(activeRig.group);
+            const rig = obj.userData.rig;
+            const bName = obj.userData.boneName;
+            document.getElementById('bone-label').innerText = bName;
+            
+            if (currentTab === 'vehicle') transformGizmo.attach(rig.group);
             else transformGizmo.detach();
 
-            const p = activeRig.pose[selectedBoneName];
+            const p = rig.pose[bName];
             document.getElementById('rotX').value = p[0];
             document.getElementById('rotZ').value = p[1];
             document.getElementById('rotY').value = p[2];
         }
-        document.getElementById('bone-label').innerText = selectedBoneName;
         syncUI();
         vRigs.forEach(r => r.update());
         masterHumanoid.update();
@@ -277,9 +281,10 @@
 
     ['rotX', 'rotZ', 'rotY'].forEach((id, idx) => {
         document.getElementById(id).oninput = (e) => {
-            if (activeRig && selectedBoneName) {
-                activeRig.pose[selectedBoneName][idx] = parseFloat(e.target.value);
-                activeRig.update();
+            const obj = tabState[currentTab].activeObj;
+            if (obj && obj.userData.type === 'bone') {
+                obj.userData.rig.pose[obj.userData.boneName][idx] = parseFloat(e.target.value);
+                obj.userData.rig.update();
             }
         };
     });
@@ -289,18 +294,16 @@
         if (obj && obj.userData.mirrorPartner) {
             const target = (obj.userData.type === 'bone') ? obj.userData.rig.group : obj;
             const m = obj.userData.mirrorPartner;
-            m.position.set(-target.position.x, target.position.y, target.position.z);
-            m.rotation.set(target.rotation.x, -target.rotation.y, -target.rotation.z);
+            const mirrorTarget = m.group || m;
+            mirrorTarget.position.set(-target.position.x, target.position.y, target.position.z);
+            mirrorTarget.rotation.set(target.rotation.x, -target.rotation.y, -target.rotation.z);
         }
         syncUI();
     });
 
     window.toggleMirror = () => {
         tabState[currentTab].mirror = !tabState[currentTab].mirror;
-        const btn = document.getElementById('btn-mirror-toggle');
-        btn.innerText = `Mirror: ${tabState[currentTab].mirror ? 'ON' : 'OFF'}`;
-        btn.classList.toggle('toggle-on', tabState[currentTab].mirror);
-        mirrorLine.visible = tabState[currentTab].mirror;
+        updateVisibility();
     };
 
     window.setGizmoMode = (m) => {
