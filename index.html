@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Mecha Lab: Independent Master Rigs</title>
+    <title>Mecha Lab: Refined Posing & Selection</title>
     <style>
         body { margin: 0; background: #050505; color: white; font-family: 'Segoe UI', sans-serif; overflow: hidden; touch-action: none; user-select: none; }
         #nav-bar { position: absolute; top: 0; width: 100%; display: flex; background: #111; z-index: 200; border-bottom: 1px solid #333; height: 40px; }
@@ -36,10 +36,9 @@
     <div class="section-label">Active Selection</div>
     <span id="bone-label">None</span>
     
-    <label>Posing (X / Z / Twist)</label>
-    <input type="range" id="rotX" min="-3.14" max="3.14" step="0.01" value="0">
-    <input type="range" id="rotZ" min="-3.14" max="3.14" step="0.01" value="0">
-    <input type="range" id="rotY" min="-3.14" max="3.14" step="0.01" value="0">
+    <label>Swing X</label><input type="range" id="rotX" min="-3.14" max="3.14" step="0.01" value="0">
+    <label>Swing Z</label><input type="range" id="rotZ" min="-3.14" max="3.14" step="0.01" value="0">
+    <label>Local Twist</label><input type="range" id="rotY" min="-3.14" max="3.14" step="0.01" value="0">
     
     <div id="vehicle-controls">
         <div class="section-label">Gizmo & Accuracy</div>
@@ -115,6 +114,13 @@
     const controls = new OrbitControls(camera, renderer.domElement);
     const transformGizmo = new TransformControls(camera, renderer.domElement);
     scene.add(new THREE.GridHelper(20, 40, 0x333333, 0x222222));
+    
+    // Mirror Line (Vehicle Tab)
+    const lineMat = new THREE.LineBasicMaterial({ color: 0xff0000 });
+    const lineGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,-5,10), new THREE.Vector3(0,-5,-10)]);
+    const mirrorLine = new THREE.Line(lineGeo, lineMat);
+    scene.add(mirrorLine);
+
     scene.add(new THREE.AmbientLight(0xffffff, 0.6));
     const dl = new THREE.DirectionalLight(0xffffff, 0.8); dl.position.set(5,10,5); scene.add(dl);
     scene.add(transformGizmo);
@@ -169,12 +175,16 @@
         update() {
             Object.keys(this.pivots).forEach(name => {
                 const p = this.pivots[name];
-                const [x, y, z] = this.pose[name];
+                const [x, z, y] = this.pose[name]; // Restored sequence
                 const d = new THREE.Vector3().fromArray(JOINT_CFG[name].d).normalize();
+                
                 p.quaternion.set(0,0,0,1);
+                // Swing Z
                 p.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,0,1), z));
+                // Swing X 
                 let sAxis = (Math.abs(d.y)>0.5 || name==="Root" || name==="Spine") ? new THREE.Vector3(1,0,0) : new THREE.Vector3(0,1,0);
                 p.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(sAxis, x));
+                // Local Twist
                 p.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(d.length()===0?new THREE.Vector3(0,1,0):d, y));
                 
                 const isSelected = (this === activeRig && name === selectedBoneName);
@@ -206,6 +216,12 @@
     };
 
     function selectObject(obj) {
+        // Reset old highlight
+        if (activeObject && activeObject.userData.type === 'box') {
+            activeObject.material.emissive.setHex(0x000000);
+            if (activeObject.userData.mirrorPartner) activeObject.userData.mirrorPartner.material.emissive.setHex(0x000000);
+        }
+
         activeObject = obj;
         if (!obj) {
             transformGizmo.detach();
@@ -216,6 +232,7 @@
 
         if (obj.userData.type === 'box') {
             transformGizmo.attach(obj);
+            obj.material.emissive.setHex(0x003333); // Selection highlight
             activeRig = null;
             selectedBoneName = "BOX";
         } else if (obj.userData.type === 'bone') {
@@ -244,7 +261,6 @@
         if (activeObject.userData.type === 'box') document.getElementById('acc-sx').value = target.scale.x.toFixed(2);
     }
 
-    // Number Input Listeners
     const bindAcc = (id, path, prop) => {
         document.getElementById(id).addEventListener('change', (e) => {
             if (!activeObject) return;
@@ -253,6 +269,7 @@
             if (activeObject.userData.mirrorPartner) {
                 const m = activeObject.userData.mirrorPartner;
                 if (path === 'position' && prop === 'x') m.position.x = -target.position.x;
+                else if (path === 'rotation' && (prop === 'y' || prop === 'z')) m.rotation[prop] = -target.rotation[prop];
                 else m[path][prop] = target[path][prop];
             }
         });
@@ -261,7 +278,6 @@
     bindAcc('acc-rx', 'rotation', 'x'); bindAcc('acc-ry', 'rotation', 'y'); bindAcc('acc-rz', 'rotation', 'z');
     bindAcc('acc-sx', 'scale', 'x');
 
-    // Rotation Sliders
     ['rotX', 'rotZ', 'rotY'].forEach((id, idx) => {
         document.getElementById(id).oninput = (e) => {
             if (activeRig && selectedBoneName) {
@@ -308,6 +324,7 @@
     function updateTabVisibility() {
         masterHumanoid.group.visible = (currentTab === 'humanoid');
         masterVehicle.group.visible = (currentTab === 'vehicle' && vehicleMasterVisible);
+        mirrorLine.visible = (currentTab === 'vehicle');
         rigs.forEach(r => {
             if (r.id !== "humanoid_master" && r.id !== "vehicle_master") r.group.visible = (currentTab === 'vehicle');
         });
