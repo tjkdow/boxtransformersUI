@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Mecha Lab: Skeletal Rigging</title>
+    <title>Mecha Lab: Prototyping Suite</title>
     <style>
         body { margin: 0; background: #050505; color: white; font-family: 'Consolas', monospace; overflow: hidden; touch-action: none; user-select: none; }
         #nav-bar { position: absolute; top: 0; width: 100%; display: flex; background: #111; z-index: 200; border-bottom: 1px solid #00ffff; height: 40px; }
@@ -24,22 +24,25 @@
         
         #footer { position: absolute; bottom: 20px; left: 20px; z-index: 150; display: flex; gap: 10px; }
         .btn-main { padding: 10px 15px; background: #006064; color: white; border: 1px solid #00ffff; cursor: pointer; text-transform: uppercase; font-size: 10px; }
+        .hidden { display: none !important; }
     </style>
 </head>
 <body>
 
 <div id="nav-bar">
-    <div id="tab-vehicle" class="tab active" onclick="changeTab('vehicle')">Vehicle Assembly</div>
-    <div id="tab-humanoid" class="tab" onclick="changeTab('humanoid')">Master Skeleton Lab</div>
+    <div id="tab-vehicle" class="tab active" onclick="changeTab('vehicle')">Vehicle Modeler</div>
+    <div id="tab-humanoid" class="tab" onclick="changeTab('humanoid')">Humanoid Rigging</div>
 </div>
 
 <div id="ui">
-    <div id="bone-label">SELECT JOINT</div>
+    <div id="bone-label">EMPTY SELECTION</div>
     
-    <div class="section-label">Joint Rotation</div>
-    <label>Flex / Extend (X)</label><input type="range" id="rotX" min="-3.14" max="3.14" step="0.01" value="0">
-    <label>Side Tilt (Z)</label><input type="range" id="rotZ" min="-3.14" max="3.14" step="0.01" value="0">
-    <label>Torsion / Twist (Y)</label><input type="range" id="rotY" min="-3.14" max="3.14" step="0.01" value="0">
+    <div id="rig-controls">
+        <div class="section-label">Joint Rotation</div>
+        <label>Flex / Extend (X)</label><input type="range" id="rotX" min="-3.14" max="3.14" step="0.01" value="0">
+        <label>Side Tilt (Z)</label><input type="range" id="rotZ" min="-3.14" max="3.14" step="0.01" value="0">
+        <label>Torsion / Twist (Y)</label><input type="range" id="rotY" min="-3.14" max="3.14" step="0.01" value="0">
+    </div>
     
     <div class="section-label">Transform Control</div>
     <div class="row">
@@ -49,12 +52,13 @@
     <div class="row">
         <input type="number" id="px" step="0.1"> <input type="number" id="py" step="0.1"> <input type="number" id="pz" step="0.1">
     </div>
-    <button onclick="window.deleteActive()" style="background:#400; margin-top:20px; width:100%; border-color:#f00;">SCRAP UNIT</button>
+    <button onclick="window.deleteActive()" style="background:#400; margin-top:20px; width:100%; border-color:#f00;">DELETE SELECTED</button>
 </div>
 
 <div id="footer">
-    <button class="btn-main" onclick="window.addBox()">+ Armor Box</button>
-    <button class="btn-main" style="background:#311b92;" onclick="window.spawnSubRig()">+ New Skeleton</button>
+    <button id="footer-veh-box" class="btn-main" onclick="window.addBox(false)">+ Scenery Box</button>
+    <button id="footer-rig-box" class="btn-main hidden" onclick="window.addBox(true)">+ Armor Part</button>
+    <button id="footer-rig-skeleton" class="btn-main hidden" style="background:#311b92;" onclick="window.spawnSubRig()">+ New Skeleton</button>
 </div>
 
 <script type="importmap">
@@ -72,18 +76,21 @@
     import { OrbitControls } from 'controls';
     import { TransformControls } from 'gizmo';
 
-    // HUMAN PROPORTIONS MAP
+    // CORRECTED HIERARCHY: Hips -> Thighs -> Knees
     const SKELETON = {
         "Root": { p: null, l: 0, d: [0,0,0] }, 
-        "Hips": { p: "Root", l: 0, d: [0,0,0], off: [0, 1.8, 0] }, 
-        "Spine": { p: "Hips", l: 0.6, d: [0,1,0] }, 
+        "Pelvis": { p: "Root", l: 0, d: [0,0,0], off: [0, 1.8, 0] }, 
+        "Spine": { p: "Pelvis", l: 0.6, d: [0,1,0] }, 
         "Chest": { p: "Spine", l: 0.5, d: [0,1,0] }, 
-        "Neck": { p: "Chest", l: 0.15, d: [0,1,0] }, 
-        "Head": { p: "Neck", l: 0.35, d: [0,1,0] },
-        "L_Shoulder": { p: "Chest", l: 0.5, d: [1,0,0] }, "L_Elbow": { p: "L_Shoulder", l: 0.5, d: [1,0,0] }, "L_Hand": { p: "L_Elbow", l: 0.2, d: [1,0,0] },
-        "R_Shoulder": { p: "Chest", l: 0.5, d: [-1,0,0] }, "R_Elbow": { p: "R_Shoulder", l: 0.5, d: [-1,0,0] }, "R_Hand": { p: "R_Elbow", l: 0.2, d: [-1,0,0] },
-        "L_Hip": { p: "Hips", l: 0.9, d: [0.2,-1,0] }, "L_Knee": { p: "L_Hip", l: 0.8, d: [0,-1,0] }, "L_Foot": { p: "L_Knee", l: 0.2, d: [0,0,0.2] },
-        "R_Hip": { p: "Hips", l: 0.9, d: [-0.2,-1,0] }, "R_Knee": { p: "R_Hip", l: 0.8, d: [0,-1,0] }, "R_Foot": { p: "R_Knee", l: 0.2, d: [0,0,0.2] }
+        "Head": { p: "Chest", l: 0.4, d: [0,1,0], off: [0, 0.6, 0] },
+        "L_Shoulder": { p: "Chest", l: 0.5, d: [1,0,0] }, "L_Elbow": { p: "L_Shoulder", l: 0.5, d: [1,0,0] },
+        "R_Shoulder": { p: "Chest", l: 0.5, d: [-1,0,0] }, "R_Elbow": { p: "R_Shoulder", l: 0.5, d: [-1,0,0] },
+        "L_Hip": { p: "Pelvis", l: 0.2, d: [1,0,0], off: [0.2, 0, 0] }, 
+        "L_Thigh": { p: "L_Hip", l: 0.9, d: [0,-1,0] },
+        "L_Knee": { p: "L_Thigh", l: 0.8, d: [0,-1,0] },
+        "R_Hip": { p: "Pelvis", l: 0.2, d: [-1,0,0], off: [-0.2, 0, 0] },
+        "R_Thigh": { p: "R_Hip", l: 0.9, d: [0,-1,0] },
+        "R_Knee": { p: "R_Thigh", l: 0.8, d: [0,-1,0] }
     };
 
     let curTab = 'vehicle', activeObj = null, activeRig = null, activeJointName = null;
@@ -99,9 +106,9 @@
     scene.add(new THREE.GridHelper(20, 20, 0x00ffff, 0x111111));
     scene.add(gizmo);
     scene.add(new THREE.AmbientLight(0xffffff, 0.4));
-    const dL = new THREE.DirectionalLight(0x00ffff, 0.8); dL.position.set(5,10,5); scene.add(dL);
+    const dL = new THREE.DirectionalLight(0xffffff, 0.8); dL.position.set(5,10,5); scene.add(dL);
 
-    const parts = [], subRigs = [];
+    const vehicleBoxes = [], subRigs = [];
     let masterRig = null;
 
     class RigSkeleton {
@@ -110,7 +117,6 @@
             this.group = new THREE.Group();
             this.pivots = {};
             this.joints = {};
-            this.bones = {};
             this.pose = {};
             
             Object.keys(SKELETON).forEach(name => {
@@ -119,7 +125,6 @@
                 this.pivots[name] = pivot;
                 const cfg = SKELETON[name];
                 
-                // Visible Joint
                 const joint = new THREE.Mesh(new THREE.IcosahedronGeometry(0.06, 1), new THREE.MeshBasicMaterial({color: 0x00ffff}));
                 joint.userData = { type: 'bone', name, rig: this };
                 pivot.add(joint);
@@ -135,18 +140,12 @@
                     }
                     parentP.add(pivot);
                     
-                    // Visible Bone Cylinder
                     if (cfg.l > 0) {
-                        const boneGeo = new THREE.CylinderGeometry(0.01, 0.03, cfg.l, 6);
-                        const bone = new THREE.Mesh(boneGeo, new THREE.MeshStandardMaterial({color: 0x444444, flatShading: true}));
+                        const bone = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.03, cfg.l, 6), new THREE.MeshStandardMaterial({color: 0x444444}));
                         bone.position.set(cfg.d[0]*cfg.l/2, cfg.d[1]*cfg.l/2, cfg.d[2]*cfg.l/2);
-                        
-                        // Align bone mesh to direction
                         const dir = new THREE.Vector3().fromArray(cfg.d).normalize();
-                        const axis = new THREE.Vector3(0,1,0);
-                        bone.quaternion.setFromUnitVectors(axis, dir);
+                        bone.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dir);
                         pivot.add(bone);
-                        this.bones[name] = bone;
                     }
                 }
             });
@@ -159,32 +158,35 @@
                 const p = this.pivots[name];
                 const [rx, rz, ry] = this.pose[name];
                 const d = new THREE.Vector3().fromArray(SKELETON[name].d).normalize();
-                
                 p.quaternion.set(0,0,0,1);
                 p.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,0,1), rz));
-                let flexAxis = (Math.abs(d.y)>0.5 || name==="Root" || name==="Hips") ? new THREE.Vector3(1,0,0) : new THREE.Vector3(0,1,0);
+                let flexAxis = (Math.abs(d.y)>0.5 || name==="Root" || name==="Pelvis") ? new THREE.Vector3(1,0,0) : new THREE.Vector3(0,1,0);
                 p.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(flexAxis, rx));
                 p.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(d.length()===0?new THREE.Vector3(0,1,0):d, ry));
-                
-                const isSel = (this === activeRig && name === activeJointName);
-                this.joints[name].material.color.set(isSel ? 0xffff00 : 0x00ffff);
+                this.joints[name].material.color.set((this === activeRig && name === activeJointName) ? 0xffff00 : 0x00ffff);
             });
         }
     }
 
     masterRig = new RigSkeleton(true);
 
-    window.addBox = () => {
-        const b = new THREE.Mesh(new THREE.BoxGeometry(0.5,0.5,0.5), new THREE.MeshStandardMaterial({color: 0x222222, metalness: 0.8, roughness: 0.2}));
-        b.userData = { type: 'box' };
-        scene.add(b); parts.push(b);
+    window.addBox = (parented) => {
+        const b = new THREE.Mesh(new THREE.BoxGeometry(0.5,0.5,0.5), new THREE.MeshStandardMaterial({color: 0x333333}));
+        b.userData = { type: 'box', parented: parented };
+        
+        if (parented && activeRig && activeJointName) {
+            activeRig.pivots[activeJointName].add(b);
+        } else {
+            scene.add(b);
+            if (!parented) vehicleBoxes.push(b);
+        }
         select(b);
     };
 
     window.spawnSubRig = () => {
         const r = new RigSkeleton(false);
-        r.group.position.set(Math.random()*4-2, 0, Math.random()*4-2);
-        select(r.joints["Hips"]);
+        r.group.position.set(Math.random()*2, 0, Math.random()*2);
+        select(r.joints["Pelvis"]);
     };
 
     function select(obj) {
@@ -194,18 +196,20 @@
         if (!obj) {
             gizmo.detach(); activeJointName = null; activeRig = null;
             document.getElementById('bone-label').innerText = "EMPTY SELECTION";
+            document.getElementById('rig-controls').classList.add('hidden');
             return;
         }
 
         if (obj.userData.type === 'box') {
             gizmo.attach(obj);
             obj.material.emissive.setHex(0x003333);
-            activeRig = null; activeJointName = "ARMOR UNIT";
+            activeRig = null; activeJointName = obj.userData.parented ? "ARMOR PIECE" : "VEHICLE PART";
+            document.getElementById('rig-controls').classList.add('hidden');
         } else if (obj.userData.type === 'bone') {
             activeRig = obj.userData.rig;
             activeJointName = obj.userData.name;
-            if (curTab === 'vehicle') gizmo.attach(activeRig.group);
-            else gizmo.detach();
+            gizmo.attach(activeRig.group);
+            document.getElementById('rig-controls').classList.remove('hidden');
 
             const p = activeRig.pose[activeJointName];
             document.getElementById('rotX').value = p[0];
@@ -243,27 +247,34 @@
     gizmo.addEventListener('change', syncUI);
     gizmo.addEventListener('dragging-changed', (e) => orbit.enabled = !e.value);
 
-    window.setGizmoMode = (m) => {
-        gizmo.setMode(m);
-        document.getElementById('btn-translate').classList.toggle('active-tool', m === 'translate');
-        document.getElementById('btn-rotate').classList.toggle('active-tool', m === 'rotate');
-    };
+    window.setGizmoMode = (m) => gizmo.setMode(m);
 
     window.changeTab = (t) => {
         curTab = t;
         document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
         document.getElementById('tab-' + t).classList.add('active');
+        
+        // UI visibility
+        document.getElementById('footer-veh-box').classList.toggle('hidden', t !== 'vehicle');
+        document.getElementById('footer-rig-box').classList.toggle('hidden', t !== 'humanoid');
+        document.getElementById('footer-rig-skeleton').classList.toggle('hidden', t !== 'humanoid');
+
+        // Scene visibility
         masterRig.group.visible = (t === 'humanoid');
-        subRigs.forEach(r => r.group.visible = (t === 'vehicle'));
-        parts.forEach(p => p.visible = (t === 'vehicle'));
+        subRigs.forEach(r => r.group.visible = (t === 'humanoid'));
+        vehicleBoxes.forEach(b => b.visible = (t === 'vehicle'));
+        
         select(null);
     };
 
     window.deleteActive = () => {
         if (!activeObj || activeObj.userData.rig?.isMaster) return;
         if (activeObj.userData.type === 'box') {
-            parts.splice(parts.indexOf(activeObj), 1);
-            scene.remove(activeObj);
+            if (activeObj.parent !== scene) activeObj.parent.remove(activeObj);
+            else {
+                vehicleBoxes.splice(vehicleBoxes.indexOf(activeObj), 1);
+                scene.remove(activeObj);
+            }
         } else {
             subRigs.splice(subRigs.indexOf(activeObj.userData.rig), 1);
             scene.remove(activeObj.userData.rig.group);
@@ -275,12 +286,14 @@
         if (gizmo.dragging) return;
         const mouse = new THREE.Vector2((e.clientX/window.innerWidth)*2-1, -(e.clientY/window.innerHeight)*2+1);
         const ray = new THREE.Raycaster(); ray.setFromCamera(mouse, camera);
-        const pool = [...parts, ...subRigs.flatMap(r => Object.values(r.joints)), ...Object.values(masterRig.joints)];
+        
+        // Find all visible interactable objects
+        const pool = [];
+        scene.traverse(child => { if(child.userData.type && child.visible) pool.push(child); });
+        
         const hits = ray.intersectObjects(pool);
-        if (hits.length > 0) {
-            const hit = hits.find(h => h.object.visible);
-            if (hit) select(hit.object);
-        } else select(null);
+        if (hits.length > 0) select(hits[0].object);
+        else select(null);
     });
 
     function animate() { 
