@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Mecha Lab: Gizmo Edition</title>
+    <title>Mecha Lab: Vehicle Rig & Mirror</title>
     <style>
         body { margin: 0; background: #050505; color: white; font-family: 'Segoe UI', sans-serif; overflow: hidden; touch-action: none; user-select: none; }
         #nav-bar { position: absolute; top: 0; width: 100%; display: flex; background: #111; z-index: 200; border-bottom: 1px solid #333; height: 40px; }
@@ -17,9 +17,10 @@
         button { width: 100%; padding: 8px; cursor: pointer; background: #222; color: white; border: 1px solid #444; border-radius: 4px; font-size: 10px; font-weight: bold; text-transform: uppercase; }
         button:hover { background: #333; }
         .active-tool { background: #004d40; border-color: #00ffff; }
+        .toggle-on { color: #00ffff; border-color: #00ffff; }
         
-        #vehicle-footer { position: absolute; bottom: 20px; left: 20px; z-index: 150; }
-        .build-btn { padding: 12px 25px; background: #2e7d32; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; text-transform: uppercase; }
+        #vehicle-footer { position: absolute; bottom: 20px; left: 20px; z-index: 150; display: flex; gap: 10px; }
+        .build-btn { padding: 12px 20px; background: #2e7d32; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; text-transform: uppercase; }
     </style>
 </head>
 <body>
@@ -51,6 +52,12 @@
             <button id="btn-rotate" onclick="setGizmoMode('rotate')">Rotate</button>
         </div>
 
+        <label>Toggles</label>
+        <div class="btn-group">
+            <button id="btn-mirror" onclick="toggleMirror()">Mirror Off</button>
+            <button id="btn-rig-toggle" onclick="toggleRigVisibility()">Rig Hide</button>
+        </div>
+
         <label>Manual Scale W/H/D</label>
         <input type="range" id="sx" min="0.1" max="5" step="0.1" value="1">
         <input type="range" id="sy" min="0.1" max="5" step="0.1" value="1">
@@ -61,7 +68,8 @@
 </div>
 
 <div id="vehicle-footer">
-    <button class="build-btn" onclick="window.addBox()">+ Add Box Part</button>
+    <button class="build-btn" onclick="window.addBox()">+ Add Box</button>
+    <button class="build-btn" style="background:#4527a0;" onclick="window.cloneRigToVehicle()">+ Clone Rig</button>
 </div>
 
 <script type="importmap">
@@ -93,7 +101,8 @@
 
     let pose = Object.fromEntries(Object.keys(config).map(n => [n, [0,0,0]]));
     let selectedBone = "Root", currentTab = 'vehicle', activeBox = null, boxes = [];
-    const pivots = {}, clickables = [];
+    let mirrorEnabled = false, rigVisibleInVehicle = false;
+    const pivots = {}, clickables = [], vehicleRigs = [];
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 100);
@@ -104,160 +113,154 @@
     
     const controls = new OrbitControls(camera, renderer.domElement);
     const transformGizmo = new TransformControls(camera, renderer.domElement);
-    
     scene.add(new THREE.GridHelper(10, 20, 0x333333, 0x222222));
     scene.add(new THREE.AmbientLight(0xffffff, 0.6));
     const dl = new THREE.DirectionalLight(0xffffff, 0.8); dl.position.set(5,10,5); scene.add(dl);
-
     scene.add(transformGizmo);
 
-    // Prevent orbit controls from moving when using gizmo
-    transformGizmo.addEventListener('dragging-changed', (event) => {
-        controls.enabled = !event.value;
-    });
-
-    Object.keys(config).forEach(name => {
-        const pivot = new THREE.Group();
-        pivot.name = name; pivots[name] = pivot;
-        const isRoot = name === "Root";
-        let geom = isRoot ? new THREE.CylinderGeometry(0.25, 0.25, 0.02, 32) : new THREE.SphereGeometry(0.05);
-        const dot = new THREE.Mesh(geom, new THREE.MeshBasicMaterial({color: 0xffffff}));
-        dot.userData.boneName = name; pivot.add(dot); clickables.push(dot);
-
-        if (isRoot) scene.add(pivot);
-        else {
-            const cfg = config[name];
-            const parentPivot = pivots[cfg.p];
-            if (cfg.offset) pivot.position.set(...cfg.offset);
-            else {
-                const pData = config[cfg.p];
-                pivot.position.set(pData.d[0]*pData.l, pData.d[1]*pData.l, pData.d[2]*pData.l);
-            }
-            parentPivot.add(pivot);
-
-            if (cfg.l > 0) {
-                const bone = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, cfg.l, 6), new THREE.MeshBasicMaterial({color: 0xcccccc}));
-                bone.position.set(cfg.d[0]*cfg.l/2, cfg.d[1]*cfg.l/2, cfg.d[2]*cfg.l/2);
-                if(cfg.d[0] !== 0) bone.rotation.z = Math.PI/2;
-                else if(cfg.d[2] !== 0) bone.rotation.x = Math.PI/2;
-                pivot.add(bone); bone.userData.boneName = name; clickables.push(bone);
-
-                const fin = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.12, 0.04), new THREE.MeshBasicMaterial({color: 0x00ffff}));
-                fin.position.copy(bone.position);
-                if (name.includes("Foot")) fin.position.y += 0.05; 
-                else { fin.position.z += 0.05; fin.rotation.x = Math.PI/2; }
-                pivot.add(fin); fin.userData.boneName = name; clickables.push(fin);
+    transformGizmo.addEventListener('dragging-changed', (e) => { controls.enabled = !e.value; });
+    
+    transformGizmo.addEventListener('change', () => {
+        if (activeBox && mirrorEnabled && transformGizmo.dragging) {
+            const m = activeBox.userData.mirror;
+            if (m) {
+                m.position.set(-activeBox.position.x, activeBox.position.y, activeBox.position.z);
+                m.rotation.set(activeBox.rotation.x, -activeBox.rotation.y, -activeBox.rotation.z);
             }
         }
     });
 
+    function createRig(isMain = true) {
+        const rigGroup = new THREE.Group();
+        const localPivots = {};
+        Object.keys(config).forEach(name => {
+            const pivot = new THREE.Group();
+            localPivots[name] = pivot;
+            const isRoot = name === "Root";
+            let geom = isRoot ? new THREE.CylinderGeometry(0.2, 0.2, 0.01, 32) : new THREE.SphereGeometry(0.04);
+            const dot = new THREE.Mesh(geom, new THREE.MeshBasicMaterial({color: isMain ? 0xffffff : 0x666666}));
+            dot.userData.boneName = name; pivot.add(dot);
+            if (isMain) clickables.push(dot);
+
+            if (isRoot) rigGroup.add(pivot);
+            else {
+                const cfg = config[name];
+                const parentPivot = localPivots[cfg.p];
+                if (cfg.offset) pivot.position.set(...cfg.offset);
+                else pivot.position.set(config[cfg.p].d[0]*config[cfg.p].l, config[cfg.p].d[1]*config[cfg.p].l, config[cfg.p].d[2]*config[cfg.p].l);
+                parentPivot.add(pivot);
+                if (cfg.l > 0) {
+                    const bone = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, cfg.l, 6), new THREE.MeshBasicMaterial({color: 0x999999}));
+                    bone.position.set(cfg.d[0]*cfg.l/2, cfg.d[1]*cfg.l/2, cfg.d[2]*cfg.l/2);
+                    if(cfg.d[0] !== 0) bone.rotation.z = Math.PI/2; else if(cfg.d[2] !== 0) bone.rotation.x = Math.PI/2;
+                    pivot.add(bone);
+                    const fin = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.1, 0.03), new THREE.MeshBasicMaterial({color: 0x00ffff}));
+                    fin.position.copy(bone.position);
+                    if (name.includes("Foot")) fin.position.y += 0.04; else { fin.position.z += 0.04; fin.rotation.x = Math.PI/2; }
+                    pivot.add(fin);
+                }
+            }
+        });
+        return { group: rigGroup, pivots: localPivots };
+    }
+
+    const mainRig = createRig(true);
+    Object.assign(pivots, mainRig.pivots);
+    scene.add(mainRig.group);
+
     window.addBox = () => {
         const mesh = new THREE.Mesh(new THREE.BoxGeometry(1,1,1), new THREE.MeshPhongMaterial({ color: 0x444444 }));
-        mesh.position.set(0, 0.5, 0);
+        mesh.position.set(mirrorEnabled ? 1.5 : 0, 0.5, 0);
         scene.add(mesh); boxes.push(mesh);
+        if (mirrorEnabled) {
+            const m = new THREE.Mesh(mesh.geometry, mesh.material);
+            m.position.set(-mesh.position.x, mesh.position.y, mesh.position.z);
+            scene.add(m); boxes.push(m);
+            mesh.userData.mirror = m; m.userData.mirror = mesh;
+        }
         setActiveBox(mesh);
     };
 
-    window.deleteBox = () => {
-        if (!activeBox) return;
-        transformGizmo.detach();
-        scene.remove(activeBox);
-        boxes = boxes.filter(b => b !== activeBox);
-        activeBox = null;
-        document.getElementById('part-label').innerText = "No Selection";
+    window.cloneRigToVehicle = () => {
+        const clone = createRig(false);
+        clone.group.position.x = vehicleRigs.length + 2;
+        scene.add(clone.group);
+        vehicleRigs.push(clone);
+        updateApp();
     };
 
     function setActiveBox(mesh) {
         activeBox = mesh;
         transformGizmo.attach(mesh);
-        document.getElementById('part-label').innerText = "Selected Box";
-        ['sx','sy','sz'].forEach(id => {
-            document.getElementById(id).value = mesh.scale[id.charAt(1)];
-        });
+        document.getElementById('part-label').innerText = "Box Selected";
     }
 
-    window.setGizmoMode = (mode) => {
-        transformGizmo.setMode(mode);
-        document.getElementById('btn-translate').classList.toggle('active-tool', mode === 'translate');
-        document.getElementById('btn-rotate').classList.toggle('active-tool', mode === 'rotate');
+    window.toggleMirror = () => {
+        mirrorEnabled = !mirrorEnabled;
+        const btn = document.getElementById('btn-mirror');
+        btn.innerText = mirrorEnabled ? "Mirror On" : "Mirror Off";
+        btn.classList.toggle('toggle-on', mirrorEnabled);
     };
 
-    window.mirrorPose = (from, to) => {
-        Object.keys(pose).forEach(name => {
-            let target = null;
-            if (name.includes(`_${from}`)) target = name.replace(`_${from}`, `_${to}`);
-            else if (name.startsWith(from + '_')) target = name.replace(from + '_', to + '_');
-            if (target && pose[target]) {
-                const [x, y, z] = pose[name];
-                pose[target] = [x, -y, -z];
-            }
-        });
+    window.toggleRigVisibility = () => {
+        rigVisibleInVehicle = !rigVisibleInVehicle;
+        const btn = document.getElementById('btn-rig-toggle');
+        btn.innerText = rigVisibleInVehicle ? "Rig Show" : "Rig Hide";
+        btn.classList.toggle('toggle-on', rigVisibleInVehicle);
         updateApp();
     };
 
-    function updateApp() {
-        document.getElementById('bone-label').innerText = selectedBone;
-        ['rotX', 'rotY', 'rotZ'].forEach((id, i) => document.getElementById(id).value = pose[selectedBone][i]);
+    window.setGizmoMode = (m) => {
+        transformGizmo.setMode(m);
+        document.getElementById('btn-translate').classList.toggle('active-tool', m === 'translate');
+        document.getElementById('btn-rotate').classList.toggle('active-tool', m === 'rotate');
+    };
 
+    function updateApp() {
+        mainRig.group.visible = (currentTab === 'humanoid' || rigVisibleInVehicle);
+        vehicleRigs.forEach(r => r.group.visible = (currentTab === 'vehicle'));
+        boxes.forEach(b => b.visible = (currentTab === 'vehicle'));
+        
         Object.keys(pivots).forEach(name => {
-            const pivot = pivots[name];
-            pivot.visible = (currentTab === 'humanoid');
+            const p = pivots[name];
             const [x, y, z] = pose[name];
-            const boneDir = new THREE.Vector3().fromArray(config[name].d).normalize();
-            pivot.quaternion.set(0, 0, 0, 1);
-            pivot.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), z));
-            let swingAxis = (Math.abs(boneDir.y) > 0.5 || name === "Root" || name === "Pelvis" || name === "Spine") ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
-            pivot.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(swingAxis, x));
-            pivot.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(boneDir.length() === 0 ? new THREE.Vector3(0,1,0) : boneDir, y));
-            pivot.traverse(c => { if(c.isMesh) c.material.color.set(name === selectedBone ? 0xffff00 : 0xffffff); });
+            const d = new THREE.Vector3().fromArray(config[name].d).normalize();
+            p.quaternion.set(0,0,0,1);
+            p.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,0,1), z));
+            let sAxis = (Math.abs(d.y) > 0.5 || name === "Root" || name === "Spine") ? new THREE.Vector3(1,0,0) : new THREE.Vector3(0,1,0);
+            p.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(sAxis, x));
+            p.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(d.length() === 0 ? new THREE.Vector3(0,1,0) : d, y));
+            p.traverse(c => { if(c.isMesh && c.userData.boneName) c.material.color.set(name === selectedBone ? 0xffff00 : 0xffffff); });
         });
 
-        boxes.forEach(b => b.visible = (currentTab === 'vehicle'));
         if (currentTab === 'humanoid') transformGizmo.detach();
         else if (activeBox) transformGizmo.attach(activeBox);
     }
-
-    ['rotX', 'rotY', 'rotZ'].forEach((id, axis) => {
-        document.getElementById(id).oninput = (e) => {
-            pose[selectedBone][axis] = parseFloat(e.target.value);
-            updateApp();
-        };
-    });
-
-    ['sx','sy','sz'].forEach(id => {
-        document.getElementById(id).oninput = (e) => { 
-            if (activeBox) activeBox.scale[id.charAt(1)] = parseFloat(e.target.value);
-        };
-    });
 
     renderer.domElement.addEventListener('pointerdown', (e) => {
         if (transformGizmo.dragging) return;
         const mouse = new THREE.Vector2((e.clientX/window.innerWidth)*2-1, -(e.clientY/window.innerHeight)*2+1);
         const raycaster = new THREE.Raycaster();
         raycaster.setFromCamera(mouse, camera);
-
         if (currentTab === 'vehicle') {
             const hit = raycaster.intersectObjects(boxes)[0];
             if (hit) setActiveBox(hit.object);
-            else if (!transformGizmo.dragging) {
-                activeBox = null; transformGizmo.detach();
-                document.getElementById('part-label').innerText = "No Selection";
-            }
+            else { activeBox = null; transformGizmo.detach(); }
         } else {
             const hit = raycaster.intersectObjects(clickables)[0];
             if (hit) { selectedBone = hit.object.userData.boneName; updateApp(); }
         }
     });
 
-    window.changeTab = (tab) => {
-        currentTab = tab;
-        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-        document.getElementById('tab-' + tab.charAt(0)).classList.add('active');
-        document.getElementById('pane-vehicle').style.display = (tab === 'vehicle') ? 'block' : 'none';
-        document.getElementById('pane-humanoid').style.display = (tab === 'humanoid') ? 'block' : 'none';
-        document.getElementById('vehicle-footer').style.display = (tab === 'vehicle') ? 'block' : 'none';
+    window.changeTab = (t) => {
+        currentTab = t;
+        document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+        document.getElementById('tab-' + t.charAt(0)).classList.add('active');
+        document.getElementById('pane-vehicle').style.display = (t === 'vehicle') ? 'block' : 'none';
+        document.getElementById('pane-humanoid').style.display = (t === 'humanoid') ? 'block' : 'none';
+        document.getElementById('vehicle-footer').style.display = (t === 'vehicle') ? 'flex' : 'none';
         updateApp();
-    }
+    };
 
     updateApp();
     function animate() { requestAnimationFrame(animate); renderer.render(scene, camera); }
