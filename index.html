@@ -2,380 +2,279 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Mecha Lab: Connected Pelvis</title>
+    <title>3D Rig: Restored & Connected</title>
     <style>
         body { margin: 0; background: #050505; color: white; font-family: 'Segoe UI', sans-serif; overflow: hidden; touch-action: none; user-select: none; }
-        #nav-bar { position: absolute; top: 0; width: 100%; display: flex; background: #111; z-index: 200; border-bottom: 1px solid #333; height: 40px; }
-        .tab { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 11px; cursor: pointer; text-transform: uppercase; color: #666; border-right: 1px solid #222; }
-        .tab.active { color: #00ffff; background: #1a1a1a; border-bottom: 2px solid #00ffff; }
-
-        #ui { position: absolute; right: 10px; top: 50px; width: 260px; background: rgba(10, 10, 10, 0.95); padding: 15px; border-radius: 8px; border: 1px solid #444; z-index: 100; }
-        .section-label { font-size: 10px; color: #00ffff; margin-top: 12px; margin-bottom: 5px; text-transform: uppercase; border-bottom: 1px solid #333; }
-        #bone-label { font-size: 13px; font-weight: bold; color: #ffff00; display: block; margin-bottom: 10px; text-align: center; padding: 4px; background: #222; border-radius: 4px; }
+        #ui { position: absolute; right: 10px; top: 10px; width: 220px; background: rgba(15, 15, 15, 0.95); padding: 15px; border-radius: 8px; border: 1px solid #444; z-index: 100; }
+        #bone-label { font-size: 16px; font-weight: bold; color: #00ffff; display: block; margin-bottom: 10px; }
+        label { display: block; font-size: 10px; color: #888; margin-top: 8px; text-transform: uppercase; }
+        input[type=range] { width: 100%; cursor: pointer; margin-bottom: 4px; accent-color: #00ffff; }
+        .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-top: 10px; }
+        button { width: 100%; padding: 8px; cursor: pointer; background: #222; color: white; border: 1px solid #444; border-radius: 4px; font-size: 10px; font-weight: bold; }
+        button:hover { background: #333; }
         
-        label { display: block; font-size: 9px; color: #888; margin-top: 6px; text-transform: uppercase; }
-        input[type=range] { width: 100%; cursor: pointer; accent-color: #00ffff; }
-        input[type=number] { background: #111; border: 1px solid #444; color: #00ffff; width: 58px; font-size: 11px; padding: 3px; border-radius: 2px; text-align: center; }
+        #timeline-container { position: absolute; bottom: 0; width: 100%; height: 130px; background: #0a0a0a; border-top: 2px solid #333; z-index: 100; }
+        #timeline-scrubber { width: 100%; height: 35px; background: #151515; position: relative; cursor: ew-resize; border-bottom: 1px solid #333; }
+        #playhead { position: absolute; top: 0; width: 2px; height: 100%; background: #ff0055; pointer-events: none; box-shadow: 0 0 8px #ff0055; z-index: 5; }
+        #frames-list { display: flex; align-items: center; padding: 10px 20px; overflow-x: auto; gap: 12px; height: 85px; }
         
-        .row { display: flex; align-items: center; gap: 5px; margin-top: 5px; }
-        button { flex: 1; padding: 8px; cursor: pointer; background: #222; color: white; border: 1px solid #444; border-radius: 4px; font-size: 9px; font-weight: bold; text-transform: uppercase; }
-        .active-tool { background: #004d40; border-color: #00ffff; color: #00ffff; }
-        .toggle-on { border-color: #00ffff !important; color: #00ffff !important; box-shadow: 0 0 5px #00ffff; }
-        
-        #footer { position: absolute; bottom: 20px; left: 20px; z-index: 150; display: flex; gap: 10px; }
-        .btn-main { padding: 12px 18px; background: #2e7d32; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; text-transform: uppercase; font-size: 10px; }
+        .frame { 
+            min-width: 50px; height: 50px; background: #1a1a1a; position: relative;
+            display: flex; align-items: center; justify-content: center; 
+            border-radius: 6px; cursor: grab; flex-shrink: 0; border: 2px solid #333; 
+            font-size: 12px; color: #777; transition: transform 0.1s;
+        }
+        .frame.active { border-color: #00ffff; background: #002222; color: #00ffff; }
+        .frame.drag-over { border: 2px dashed #00ffff; transform: scale(1.1); }
+        .del-btn { position: absolute; top: -5px; right: -5px; width: 16px; height: 16px; background: #ff0055; color: white; font-size: 10px; border-radius: 50%; border: none; opacity: 0; }
+        .frame:hover .del-btn { opacity: 1; }
     </style>
 </head>
 <body>
 
-<div id="nav-bar">
-    <div id="tab-v" class="tab active" onclick="changeTab('vehicle')">Vehicle Lab</div>
-    <div id="tab-h" class="tab" onclick="changeTab('humanoid')">Humanoid Lab</div>
-</div>
-
 <div id="ui">
-    <div id="bone-label">Select Something</div>
-    <button id="btn-mirror-toggle" onclick="toggleMirror()" style="width:100%; margin-bottom:10px;">Mirror: OFF</button>
-
-    <div class="section-label">Pose / Bone Rotation</div>
+    <label>Active Joint</label>
+    <span id="bone-label">Root</span>
     <label>Swing X</label><input type="range" id="rotX" min="-3.14" max="3.14" step="0.01" value="0">
     <label>Swing Z</label><input type="range" id="rotZ" min="-3.14" max="3.14" step="0.01" value="0">
-    <label>Twist Y</label><input type="range" id="rotY" min="-3.14" max="3.14" step="0.01" value="0">
+    <label>Local Twist</label><input type="range" id="rotY" min="-3.14" max="3.14" step="0.01" value="0">
     
-    <div class="section-label">World Transform</div>
-    <div class="row">
-        <button id="btn-translate" class="active-tool" onclick="setGizmoMode('translate')">Pos</button>
-        <input type="number" id="px" step="0.1"> <input type="number" id="py" step="0.1"> <input type="number" id="pz" step="0.1">
+    <div class="btn-group">
+        <button onclick="mirrorPose('L','R')">L → R</button>
+        <button onclick="mirrorPose('R','L')">R → L</button>
     </div>
-    <div class="row">
-        <button id="btn-rotate" onclick="setGizmoMode('rotate')">Rot</button>
-        <input type="number" id="rx" step="0.1"> <input type="number" id="ry" step="0.1"> <input type="number" id="rz" step="0.1">
-    </div>
-    <button onclick="window.deleteActive()" style="background:#8b0000; margin-top:15px; width:100%; border:none;">Delete Selected</button>
+    
+    <button onclick="addFrame()" style="background:#1b5e20; margin-top:10px; border:none;">+ NEW FRAME</button>
+    <button id="playBtn" onclick="togglePlay()" style="background:#0d47a1; border:none; margin-top:5px;">PLAY</button>
+    <button onclick="exportJSON()" style="background:#f9a825; border:none; margin-top:5px; color:black;">EXPORT JSON</button>
 </div>
 
-<div id="footer">
-    <div id="v-btns">
-        <button class="btn-main" onclick="window.addBox()">+ Box Part</button>
-        <button class="btn-main" style="background:#4527a0;" onclick="window.spawnVehicleRig()">+ Human Rig</button>
-    </div>
+<div id="timeline-container">
+    <div id="timeline-scrubber"><div id="playhead"></div></div>
+    <div id="frames-list"></div>
 </div>
 
 <script type="importmap">
-    { 
-        "imports": { 
-            "three": "https://unpkg.com/three@0.160.0/build/three.module.js", 
-            "controls": "https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js",
-            "gizmo": "https://unpkg.com/three@0.160.0/examples/jsm/controls/TransformControls.js"
-        } 
-    }
+    { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js", "controls": "https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js" } }
 </script>
 
 <script type="module">
     import * as THREE from 'three';
     import { OrbitControls } from 'controls';
-    import { TransformControls } from 'gizmo';
 
-    const JOINT_CFG = {
-        "Root": { p: null, l: 0, d: [0,0,0] }, 
-        "Pelvis": { p: "Root", l: 0, d: [0,0,0], offset: [0, 1.0, 0] }, 
-        "Spine": { p: "Pelvis", l: 0.4, d: [0,1,0] }, 
-        "Chest": { p: "Spine", l: 0.4, d: [0,1,0] }, 
-        "Neck": { p: "Chest", l: 0.1, d: [0,1,0] }, 
-        "Head": { p: "Neck", l: 0.25, d: [0,1,0] },
-        "L_Arm": { p: "Chest", l: 0.4, d: [1,0,0], offset: [0.2, 0.1, 0] }, 
-        "L_Forearm": { p: "L_Arm", l: 0.4, d: [1,0,0] },
-        "R_Arm": { p: "Chest", l: 0.4, d: [-1,0,0], offset: [-0.2, 0.1, 0] }, 
-        "R_Forearm": { p: "R_Arm", l: 0.4, d: [-1,0,0] },
-        "L_Thigh": { p: "Pelvis", l: 0.45, d: [0,-1,0], offset: [0.15, 0, 0] }, 
-        "L_Calf": { p: "L_Thigh", l: 0.45, d: [0,-1,0] }, 
-        "L_Foot": { p: "L_Calf", l: 0.15, d: [0,0,1] },
-        "R_Thigh": { p: "Pelvis", l: 0.45, d: [0,-1,0], offset: [-0.15, 0, 0] }, 
-        "R_Calf": { p: "R_Thigh", l: 0.45, d: [0,-1,0] },
-        "R_Foot": { p: "R_Calf", l: 0.15, d: [0,0,1] }
+    // RESTORED CONFIGURATION: Pelvis and Spine integrated
+    const config = {
+        "Root":           { p: null,       l: 0,    d: [0,0,0] }, 
+        "Pelvis":         { p: "Root",     l: 0,    d: [0,0,0], offset: [0, 1.0, 0] }, 
+        "Spine":          { p: "Pelvis",   l: 0.4,  d: [0,1,0] }, 
+        "Pelvis_L":       { p: "Pelvis",   l: 0.15, d: [1,0,0] },
+        "Pelvis_R":       { p: "Pelvis",   l: 0.15, d: [-1,0,0] },
+        "Chest":          { p: "Spine",    l: 0.4,  d: [0,1,0] },
+        "Neck":           { p: "Chest",    l: 0.1,  d: [0,1,0] },
+        "Head":           { p: "Neck",     l: 0.25, d: [0,1,0] },
+        "L_Arm":          { p: "Chest",    l: 0.4,  d: [1,0,0], offset: [0.2, 0.1, 0] },
+        "L_Forearm":      { p: "L_Arm",    l: 0.4,  d: [1,0,0] },
+        "R_Arm":          { p: "Chest",    l: 0.4,  d: [-1,0,0], offset: [-0.2, 0.1, 0] },
+        "R_Forearm":      { p: "R_Arm",    l: 0.4,  d: [-1,0,0] },
+        "L_Thigh":        { p: "Pelvis_L", l: 0.45, d: [0,-1,0] },
+        "L_Calf":         { p: "L_Thigh",  l: 0.45, d: [0,-1,0] },
+        "L_Foot":         { p: "L_Calf",   l: 0.15, d: [0,0,1] }, 
+        "R_Thigh":        { p: "Pelvis_R", l: 0.45, d: [0,-1,0] },
+        "R_Calf":         { p: "R_Thigh",  l: 0.45, d: [0,-1,0] },
+        "R_Foot":         { p: "R_Calf",   l: 0.15, d: [0,0,1] }
     };
 
-    let currentTab = 'vehicle';
-    let tabState = {
-        vehicle: { mirror: false, activeObj: null },
-        humanoid: { mirror: false, activeObj: null }
-    };
+    let frames = [];
+    let currentIdx = 0;
+    let selectedBone = "Root";
+    let isPlaying = false;
+    let isDraggingScrub = false;
+    let draggedFrameIdx = null;
+    const pivots = {}; 
+    const clickables = [];
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 100);
-    camera.position.set(5, 3, 8);
+    camera.position.set(3, 2, 4);
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
-    
     const controls = new OrbitControls(camera, renderer.domElement);
-    const transformGizmo = new TransformControls(camera, renderer.domElement);
-    scene.add(new THREE.GridHelper(20, 20, 0x333333, 0x222222));
-    scene.add(transformGizmo);
+    scene.add(new THREE.GridHelper(10, 20, 0x333333, 0x222222));
 
-    transformGizmo.addEventListener('dragging-changed', (e) => { controls.enabled = !e.value; });
+    Object.keys(config).forEach(name => {
+        const pivot = new THREE.Group();
+        pivot.name = name;
+        pivots[name] = pivot;
+        const isRoot = name === "Root";
+        
+        let geom = isRoot ? new THREE.BoxGeometry(0.3, 0.02, 0.3) : new THREE.SphereGeometry(0.04);
+        let mat = new THREE.MeshStandardMaterial({color: 0xffffff});
+        const dot = new THREE.Mesh(geom, mat);
+        pivot.add(dot);
+        dot.userData.boneName = name;
+        clickables.push(dot);
 
-    const mirrorLine = new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,10), new THREE.Vector3(0,0,-10)]),
-        new THREE.LineBasicMaterial({ color: 0xff0000 })
-    );
-    scene.add(mirrorLine);
-
-    scene.add(new THREE.AmbientLight(0xffffff, 0.5));
-    const sun = new THREE.DirectionalLight(0xffffff, 0.7); sun.position.set(5,10,5); scene.add(sun);
-
-    const boxes = [], vRigs = [];
-    let masterHumanoid = null;
-
-    class RigInstance {
-        constructor(isMaster = false, isMirror = false) {
-            this.isMaster = isMaster;
-            this.isMirror = isMirror;
-            this.group = new THREE.Group();
-            this.pivots = {};
-            this.visuals = {};
-            this.pose = Object.fromEntries(Object.keys(JOINT_CFG).map(n => [n, [0,0,0]]));
-            this.mirrorPartner = null;
+        if (isRoot) scene.add(pivot);
+        else {
+            const parentPivot = pivots[config[name].p];
+            const cfg = config[name];
+            if (cfg.offset) pivot.position.set(...cfg.offset);
+            else {
+                const pData = config[parentPivot.name];
+                pivot.position.set(pData.d[0]*pData.l, pData.d[1]*pData.l, pData.d[2]*pData.l);
+            }
+            parentPivot.add(pivot);
             
-            Object.keys(JOINT_CFG).forEach(name => {
-                const pivot = new THREE.Group();
-                this.pivots[name] = pivot;
-                const cfg = JOINT_CFG[name];
-                
-                const dot = new THREE.Mesh(
-                    name === "Root" ? new THREE.BoxGeometry(0.3, 0.02, 0.3) : new THREE.SphereGeometry(0.04),
-                    new THREE.MeshStandardMaterial({color: isMirror ? 0x8888ff : 0xffffff, transparent: isMirror, opacity: isMirror ? 0.6 : 1})
-                );
-                dot.userData = { type: 'bone', boneName: name, rig: this };
-                pivot.add(dot);
-                this.visuals[name] = dot;
+            if (cfg.l > 0) {
+                const mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, cfg.l, 6), new THREE.MeshStandardMaterial({color: 0x666666}));
+                mesh.position.set(cfg.d[0]*cfg.l/2, cfg.d[1]*cfg.l/2, cfg.d[2]*cfg.l/2);
+                if(cfg.d[0] !== 0) mesh.rotation.z = Math.PI/2;
+                else if(cfg.d[2] !== 0) mesh.rotation.x = Math.PI/2;
+                pivot.add(mesh);
+                mesh.userData.boneName = name;
+                clickables.push(mesh);
 
-                if (!cfg.p) this.group.add(pivot);
-                else {
-                    const parentP = this.pivots[cfg.p];
-                    if (cfg.offset) {
-                        pivot.position.set(...cfg.offset);
-                        // Add visual connecting bone for offset joints (hips/shoulders)
-                        const dist = new THREE.Vector3(...cfg.offset).length();
-                        if (dist > 0.01) {
-                            const conn = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, dist), new THREE.MeshStandardMaterial({color: 0x333333}));
-                            conn.position.set(cfg.offset[0]/2, cfg.offset[1]/2, cfg.offset[2]/2);
-                            conn.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), new THREE.Vector3(...cfg.offset).normalize());
-                            parentP.add(conn);
-                        }
-                    } else {
-                        const pCfg = JOINT_CFG[cfg.p];
-                        pivot.position.set(pCfg.d[0]*pCfg.l, pCfg.d[1]*pCfg.l, pCfg.d[2]*pCfg.l);
-                    }
-                    parentP.add(pivot);
-                    
-                    if (cfg.l > 0) {
-                        const bone = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, cfg.l), new THREE.MeshStandardMaterial({color: 0x666666}));
-                        bone.position.set(cfg.d[0]*cfg.l/2, cfg.d[1]*cfg.l/2, cfg.d[2]*cfg.l/2);
-                        if(cfg.d[0]!==0) bone.rotation.z=Math.PI/2; 
-                        else if(cfg.d[2]!==0) bone.rotation.x=Math.PI/2;
-                        pivot.add(bone);
-                    }
-                }
-            });
-            scene.add(this.group);
-            if (!isMaster) vRigs.push(this);
-        }
-
-        update() {
-            Object.keys(this.pivots).forEach(name => {
-                const p = this.pivots[name];
-                const [x, z, y] = this.pose[name];
-                const d = new THREE.Vector3().fromArray(JOINT_CFG[name].d).normalize();
-                p.quaternion.set(0,0,0,1);
-                p.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,0,1), z));
-                let sAxis = (Math.abs(d.y)>0.5 || name==="Root" || name==="Spine") ? new THREE.Vector3(1,0,0) : new THREE.Vector3(0,1,0);
-                p.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(sAxis, x));
-                p.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(d.length()===0?new THREE.Vector3(0,1,0):d, y));
-                
-                const isSelected = (this === tabState[currentTab].activeObj?.userData.rig && name === (tabState[currentTab].activeObj?.userData.boneName));
-                this.visuals[name].material.emissive.setHex(isSelected ? 0xffff00 : 0x000000);
-            });
-
-            if (this.mirrorPartner && !this.isMirror) {
-                this.mirrorPartner.group.position.set(-this.group.position.x, this.group.position.y, this.group.position.z);
-                this.mirrorPartner.group.rotation.set(this.group.rotation.x, -this.group.rotation.y, -this.group.rotation.z);
-                this.mirrorPartner.pose = JSON.parse(JSON.stringify(this.pose));
-                this.mirrorPartner.update();
+                // Twist Fin
+                const fin = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.08, 0.03), new THREE.MeshBasicMaterial({color: 0x00ffff}));
+                fin.position.copy(mesh.position);
+                if (name.includes("Foot")) { fin.position.y += 0.04; } 
+                else { fin.position.z += 0.04; fin.rotation.x = Math.PI/2; }
+                pivot.add(fin);
             }
         }
-    }
+    });
 
-    masterHumanoid = new RigInstance(true);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+    const sun = new THREE.DirectionalLight(0xffffff, 0.8); sun.position.set(5,5,5); scene.add(sun);
 
-    window.addBox = () => {
-        const b = new THREE.Mesh(new THREE.BoxGeometry(0.5,0.5,0.5), new THREE.MeshStandardMaterial({color: 0x444444}));
-        b.userData = { type: 'box' };
-        scene.add(b); boxes.push(b);
-        if (tabState.vehicle.mirror) {
-            const m = new THREE.Mesh(b.geometry, new THREE.MeshStandardMaterial({color: 0x8888ff, transparent: true, opacity: 0.5}));
-            m.userData = { type: 'box', isMirror: true };
-            b.userData.mirrorPartner = m;
-            scene.add(m); boxes.push(m);
-        }
-        selectObject(b);
+    window.addFrame = () => {
+        const lastPose = frames[currentIdx] ? JSON.parse(JSON.stringify(frames[currentIdx])) : null;
+        const newPose = lastPose ? JSON.parse(JSON.stringify(lastPose)) : Object.fromEntries(Object.keys(config).map(n => [n, [0,0,0]]));
+        frames.push(newPose);
+        currentIdx = frames.length - 1;
+        updateApp();
     };
 
-    window.spawnVehicleRig = () => {
-        const r = new RigInstance(false);
-        r.group.position.set(1.5, 0, 0);
-        if (tabState.vehicle.mirror) r.mirrorPartner = new RigInstance(false, true);
-        selectObject(r.visuals["Root"]);
+    window.deleteFrame = (idx, event) => {
+        event.stopPropagation();
+        if (frames.length <= 1) return;
+        frames.splice(idx, 1);
+        currentIdx = Math.min(currentIdx, frames.length - 1);
+        updateApp();
     };
 
-    function selectObject(obj) {
-        if (tabState[currentTab].activeObj?.userData.type === 'box') {
-            tabState[currentTab].activeObj.material.emissive.setHex(0x000000);
-        }
-        
-        tabState[currentTab].activeObj = obj;
-        if (!obj || obj.userData.isMirror) {
-            transformGizmo.detach();
-            document.getElementById('bone-label').innerText = "None";
-            return;
-        }
-
-        if (obj.userData.type === 'box') {
-            transformGizmo.attach(obj);
-            obj.material.emissive.setHex(0x00ffff);
-            document.getElementById('bone-label').innerText = "BOX PART";
-        } else if (obj.userData.type === 'bone') {
-            const rig = obj.userData.rig;
-            const bName = obj.userData.boneName;
-            document.getElementById('bone-label').innerText = bName;
-            
-            if (currentTab === 'vehicle') transformGizmo.attach(rig.group);
-            else transformGizmo.detach();
-
-            const p = rig.pose[bName];
-            document.getElementById('rotX').value = p[0];
-            document.getElementById('rotZ').value = p[1];
-            document.getElementById('rotY').value = p[2];
-        }
-        syncUI();
-        vRigs.forEach(r => r.update());
-        masterHumanoid.update();
-    }
-
-    function syncUI() {
-        const obj = tabState[currentTab].activeObj;
-        if (!obj) return;
-        const target = (obj.userData.type === 'bone') ? obj.userData.rig.group : obj;
-        document.getElementById('px').value = target.position.x.toFixed(2);
-        document.getElementById('py').value = target.position.y.toFixed(2);
-        document.getElementById('pz').value = target.position.z.toFixed(2);
-        document.getElementById('rx').value = target.rotation.x.toFixed(2);
-        document.getElementById('ry').value = target.rotation.y.toFixed(2);
-        document.getElementById('rz').value = target.rotation.z.toFixed(2);
-    }
-
-    const bindUI = (id, path, prop) => {
-        document.getElementById(id).addEventListener('input', (e) => {
-            const obj = tabState[currentTab].activeObj;
-            if (!obj) return;
-            const target = (obj.userData.type === 'bone') ? obj.userData.rig.group : obj;
-            target[path][prop] = parseFloat(e.target.value) || 0;
-            if (obj.userData.mirrorPartner) {
-                const m = obj.userData.mirrorPartner;
-                const mTarget = m.group || m;
-                if (prop === 'x' && path === 'position') mTarget.position.x = -target.position.x;
-                else mTarget[path][prop] = target[path][prop];
+    window.mirrorPose = (from, to) => {
+        const pose = frames[currentIdx];
+        Object.keys(pose).forEach(name => {
+            let target = null;
+            if (name.includes(`_${from}`)) target = name.replace(`_${from}`, `_${to}`);
+            else if (name.startsWith(from + '_')) target = name.replace(from + '_', to + '_');
+            if (target && pose[target]) {
+                const [x, y, z] = pose[name];
+                pose[target] = [-x, -y, -z];
             }
         });
+        updateApp();
     };
-    bindUI('px', 'position', 'x'); bindUI('py', 'position', 'y'); bindUI('pz', 'position', 'z');
-    bindUI('rx', 'rotation', 'x'); bindUI('ry', 'rotation', 'y'); bindUI('rz', 'rotation', 'z');
 
-    ['rotX', 'rotZ', 'rotY'].forEach((id, idx) => {
+    window.exportJSON = () => {
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(frames, null, 2));
+        const downloadAnchorNode = document.createElement('a');
+        downloadAnchorNode.setAttribute("href", dataStr);
+        downloadAnchorNode.setAttribute("download", "rig_animation.json");
+        document.body.appendChild(downloadAnchorNode);
+        downloadAnchorNode.click();
+        downloadAnchorNode.remove();
+    };
+
+    function updateApp() {
+        const pose = frames[currentIdx];
+        if(!pose) return;
+        document.getElementById('bone-label').innerText = selectedBone;
+        ['rotX', 'rotY', 'rotZ'].forEach((id, i) => document.getElementById(id).value = pose[selectedBone][i]);
+
+        Object.keys(pivots).forEach(name => {
+            const [x, y, z] = pose[name];
+            const pivot = pivots[name];
+            const boneDir = new THREE.Vector3().fromArray(config[name].d).normalize();
+            pivot.quaternion.set(0, 0, 0, 1);
+            pivot.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), z));
+            let swingAxis = (Math.abs(boneDir.y) > 0.5 || name === "Root" || name === "Pelvis" || name === "Spine") ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
+            pivot.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(swingAxis, x));
+            pivot.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(boneDir.length() === 0 || name === "Root" ? new THREE.Vector3(0,1,0) : boneDir, y));
+            
+            pivot.traverse(c => { if(c.isMesh) {
+                if (c.geometry.type === "BoxGeometry" && c.material.color.getHex() === 0x00ffff) return;
+                if (name === selectedBone) c.material.emissive.setHex(0x555500);
+                else c.material.emissive.setHex(0x000000);
+            }});
+        });
+
+        const list = document.getElementById('frames-list');
+        list.innerHTML = '';
+        frames.forEach((f, i) => {
+            const d = document.createElement('div');
+            d.className = `frame ${i === currentIdx ? 'active' : ''}`;
+            d.innerText = i + 1;
+            d.setAttribute('draggable', true);
+            const del = document.createElement('button');
+            del.className = 'del-btn';
+            del.innerText = '×';
+            del.onclick = (e) => deleteFrame(i, e);
+            d.appendChild(del);
+            d.onclick = () => { currentIdx = i; updateApp(); };
+            d.ondragstart = () => { draggedFrameIdx = i; };
+            d.ondragover = (e) => { e.preventDefault(); d.classList.add('drag-over'); };
+            d.ondragleave = () => { d.classList.remove('drag-over'); };
+            d.ondrop = (e) => {
+                e.preventDefault(); d.classList.remove('drag-over');
+                if (draggedFrameIdx !== null && draggedFrameIdx !== i) {
+                    const movingFrame = frames.splice(draggedFrameIdx, 1)[0];
+                    frames.splice(i, 0, movingFrame);
+                    currentIdx = i; updateApp();
+                }
+            };
+            list.appendChild(d);
+        });
+        const perc = (currentIdx / (frames.length - 1 || 1)) * 100;
+        document.getElementById('playhead').style.left = `calc(${perc}% - 1px)`;
+    }
+
+    const scrubber = document.getElementById('timeline-scrubber');
+    const handleScrub = (clientX) => {
+        if (frames.length < 2) return;
+        const rect = scrubber.getBoundingClientRect();
+        let x = (clientX - rect.left) / rect.width;
+        x = Math.max(0, Math.min(1, x));
+        currentIdx = Math.round(x * (frames.length - 1));
+        updateApp();
+    };
+    scrubber.onmousedown = (e) => { isDraggingScrub = true; handleScrub(e.clientX); };
+    window.addEventListener('mousemove', (e) => { if (isDraggingScrub) handleScrub(e.clientX); });
+    window.addEventListener('mouseup', () => { isDraggingScrub = false; });
+
+    ['rotX', 'rotY', 'rotZ'].forEach((id, axis) => {
         document.getElementById(id).oninput = (e) => {
-            const obj = tabState[currentTab].activeObj;
-            if (obj && obj.userData.type === 'bone') {
-                obj.userData.rig.pose[obj.userData.boneName][idx] = parseFloat(e.target.value);
-                obj.userData.rig.update();
-            }
+            frames[currentIdx][selectedBone][axis] = parseFloat(e.target.value);
+            updateApp();
         };
     });
 
-    transformGizmo.addEventListener('change', () => {
-        const obj = tabState[currentTab].activeObj;
-        if (obj && obj.userData.mirrorPartner) {
-            const target = (obj.userData.type === 'bone') ? obj.userData.rig.group : obj;
-            const m = obj.userData.mirrorPartner;
-            const mirrorTarget = m.group || m;
-            mirrorTarget.position.set(-target.position.x, target.position.y, target.position.z);
-            mirrorTarget.rotation.set(target.rotation.x, -target.rotation.y, -target.rotation.z);
-        }
-        syncUI();
-    });
-
-    window.toggleMirror = () => {
-        tabState[currentTab].mirror = !tabState[currentTab].mirror;
-        updateVisibility();
-    };
-
-    window.setGizmoMode = (m) => {
-        transformGizmo.setMode(m);
-        document.getElementById('btn-translate').classList.toggle('active-tool', m === 'translate');
-        document.getElementById('btn-rotate').classList.toggle('active-tool', m === 'rotate');
-    };
-
-    function updateVisibility() {
-        masterHumanoid.group.visible = (currentTab === 'humanoid');
-        vRigs.forEach(r => r.group.visible = (currentTab === 'vehicle'));
-        boxes.forEach(b => b.visible = (currentTab === 'vehicle'));
-        mirrorLine.visible = tabState[currentTab].mirror;
-        
-        const btn = document.getElementById('btn-mirror-toggle');
-        btn.innerText = `Mirror: ${tabState[currentTab].mirror ? 'ON' : 'OFF'}`;
-        btn.classList.toggle('toggle-on', tabState[currentTab].mirror);
-        document.getElementById('v-btns').style.display = (currentTab === 'vehicle') ? 'flex' : 'none';
-    }
+    window.togglePlay = () => { isPlaying = !isPlaying; document.getElementById('playBtn').innerText = isPlaying ? "STOP" : "PLAY"; if(isPlaying) playLoop(); };
+    function playLoop() { if(!isPlaying) return; currentIdx = (currentIdx + 1) % frames.length; updateApp(); setTimeout(playLoop, 200); }
 
     renderer.domElement.addEventListener('pointerdown', (e) => {
-        if (transformGizmo.dragging) return;
         const mouse = new THREE.Vector2((e.clientX/window.innerWidth)*2-1, -(e.clientY/window.innerHeight)*2+1);
         const raycaster = new THREE.Raycaster();
         raycaster.setFromCamera(mouse, camera);
-        const clickable = [...boxes, ...vRigs.flatMap(r => Object.values(r.visuals)), ...Object.values(masterHumanoid.visuals)];
-        let hits = raycaster.intersectObjects(clickable);
-        if (hits.length > 0) {
-            const hit = hits.find(h => h.object.visible);
-            if (hit) selectObject(hit.object);
-        } else selectObject(null);
+        const hit = raycaster.intersectObjects(clickables)[0];
+        if (hit) { selectedBone = hit.object.userData.boneName; updateApp(); }
     });
 
-    window.changeTab = (t) => {
-        currentTab = t;
-        document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
-        document.getElementById('tab-' + t.charAt(0)).classList.add('active');
-        selectObject(null);
-        updateVisibility();
-    };
-
-    window.deleteActive = () => {
-        const obj = tabState[currentTab].activeObj;
-        if (!obj || obj.userData.rig?.isMaster) return;
-        if (obj.userData.type === 'box') {
-            if (obj.userData.mirrorPartner) scene.remove(obj.userData.mirrorPartner);
-            boxes.splice(boxes.indexOf(obj), 1);
-            scene.remove(obj);
-        } else {
-            const rig = obj.userData.rig;
-            if (rig.mirrorPartner) scene.remove(rig.mirrorPartner.group);
-            vRigs.splice(vRigs.indexOf(rig), 1);
-            scene.remove(rig.group);
-        }
-        selectObject(null);
-    };
-
+    window.addFrame();
     function animate() { requestAnimationFrame(animate); renderer.render(scene, camera); }
     animate();
-    updateVisibility();
 </script>
 </body>
 </html>
