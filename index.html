@@ -2,22 +2,22 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>3D Rig: Master-Variant Sync</title>
+    <title>3D Rig: Stable Master-Clone Architecture</title>
     <style>
         body { margin: 0; background: #050505; color: white; font-family: 'Segoe UI', sans-serif; overflow: hidden; touch-action: none; user-select: none; }
         #ui { position: absolute; right: 10px; top: 10px; width: 220px; background: rgba(15, 15, 15, 0.95); padding: 15px; border-radius: 8px; border: 1px solid #444; z-index: 100; }
         
         .tabs { display: flex; gap: 2px; margin-bottom: 15px; background: #222; border-radius: 4px; padding: 2px; }
-        .tab { flex: 1; padding: 8px; font-size: 10px; text-align: center; cursor: pointer; background: #333; border-radius: 2px; font-weight: bold; }
+        .tab { flex: 1; padding: 6px; font-size: 9px; text-align: center; cursor: pointer; background: #333; border-radius: 2px; font-weight: bold; }
         .tab.active { background: #00ffff; color: #000; }
 
-        #bone-label { font-size: 16px; font-weight: bold; color: #00ffff; display: block; margin-bottom: 10px; }
+        #bone-label { font-size: 14px; font-weight: bold; color: #00ffff; display: block; margin-bottom: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         label { display: block; font-size: 10px; color: #888; margin-top: 8px; text-transform: uppercase; }
         input[type=range] { width: 100%; cursor: pointer; margin-bottom: 4px; accent-color: #00ffff; }
         
         .control-group { margin-top: 10px; padding-top: 10px; border-top: 1px solid #333; }
         .input-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; margin-bottom: 5px; }
-        input[type=number] { width: 100%; background: #111; color: #00ffff; border: 1px solid #444; font-size: 10px; padding: 4px; border-radius: 2px; }
+        input[type=number] { width: 100%; background: #111; color: #00ffff; border: 1px solid #444; font-size: 10px; padding: 4px; border-radius: 2px; box-sizing: border-box; }
 
         .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-top: 10px; }
         button { width: 100%; padding: 8px; cursor: pointer; background: #222; color: white; border: 1px solid #444; border-radius: 4px; font-size: 10px; font-weight: bold; }
@@ -28,8 +28,9 @@
 
 <div id="ui">
     <div class="tabs">
-        <div class="tab active" id="tab-rig1" onclick="switchRig('rig1')">HUMANOID</div>
-        <div class="tab" id="tab-rig2" onclick="switchRig('rig2')">VEHICLE</div>
+        <div class="tab active" id="tab-rigA" onclick="switchRig('rigA')">HUMAN A</div>
+        <div class="tab" id="tab-rigB" onclick="switchRig('rigB')">HUMAN B</div>
+        <div class="tab" id="tab-veh" onclick="switchRig('veh')">VEHICLE</div>
     </div>
 
     <label>Active</label>
@@ -40,13 +41,13 @@
     <label>Twist Y</label><input type="range" id="rotY" min="-3.14" max="3.14" step="0.01" value="0">
 
     <div id="armor-ui" style="display:none;" class="control-group">
-        <label>Dimensions (W/H/D)</label>
+        <label>Dimensions</label>
         <div class="input-row">
             <input type="number" id="scaX" step="0.1" value="1">
             <input type="number" id="scaY" step="0.1" value="1">
             <input type="number" id="scaZ" step="0.1" value="1">
         </div>
-        <label>Offset (X/Y/Z)</label>
+        <label>Offset</label>
         <div class="input-row">
             <input type="number" id="posX" step="0.1" value="0">
             <input type="number" id="posY" step="0.1" value="0">
@@ -58,7 +59,7 @@
         <button onclick="addBox()" style="background:#1b5e20; border:none;">ADD BOX</button>
         <button onclick="deleteSelected()" class="danger">DELETE</button>
     </div>
-    <button onclick="exportJSON()" style="background:#f9a825; border:none; margin-top:10px; color:black; width:100%;">EXPORT DATA</button>
+    <button onclick="exportJSON()" style="background:#f9a825; border:none; margin-top:10px; color:black; width:100%;">EXPORT CURRENT</button>
 </div>
 
 <script type="importmap">
@@ -69,7 +70,7 @@
     import * as THREE from 'three';
     import { OrbitControls } from 'controls';
 
-    const CONFIG = {
+    const SKELETON = {
         "Root": { p: null, l: 0, d: [0,0,0] },
         "Pelvis": { p: "Root", l: 0, d: [0,0,0], offset: [0, 2.05, 0] },
         "Spine": { p: "Root", l: 0.8, d: [0,1,0], offset: [0, 2.05, 0] },
@@ -83,30 +84,31 @@
         "R_Calf": { p: "R_Thigh", l: 0.9, d: [0,-1,0] }
     };
 
-    const RIGS = {
-        rig1: { pose: {}, boxes: [] },
-        rig2: { pose: {}, boxes: [] }
+    const DATA = {
+        rigA: { pose: {}, armor: [] },
+        rigB: { pose: {}, armor: [] },
+        veh:  { pose: {}, armor: [] }
     };
 
-    function initRig(rig) {
-        Object.keys(CONFIG).forEach(b => rig.pose[b] = { rot: [0,0,0], pos: [0,0,0], sca: [1,1,1] });
-    }
-    initRig(RIGS.rig1); initRig(RIGS.rig2);
+    const setupData = (rig) => {
+        Object.keys(SKELETON).forEach(b => rig.pose[b] = { rot:[0,0,0], pos:[0,0,0], sca:[1,1,1] });
+    };
+    setupData(DATA.rigA); setupData(DATA.rigB); setupData(DATA.veh);
 
-    let current = 'rig1', selected = "Root", pivots = {}, clickables = [];
+    let current = 'rigA', selected = "Root", pivots = {}, clickables = [];
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 100);
     camera.position.set(5, 3, 7);
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
-    const controls = new OrbitControls(camera, renderer.domElement);
+    new OrbitControls(camera, renderer.domElement);
 
     function syncStructure() {
-        // Copy box definitions from Rig 1 to Rig 2, but keep Rig 2's specific poses
-        RIGS.rig2.boxes = JSON.parse(JSON.stringify(RIGS.rig1.boxes));
-        RIGS.rig2.boxes.forEach(b => {
-            if (!RIGS.rig2.pose[b.id]) RIGS.rig2.pose[b.id] = { rot:[0,0,0], pos:[0,0,0], sca:[1,1,1] };
+        const boxes = JSON.parse(JSON.stringify(DATA.rigA.armor));
+        ['rigB', 'veh'].forEach(key => {
+            DATA[key].armor = boxes;
+            boxes.forEach(b => { if(!DATA[key].pose[b.id]) DATA[key].pose[b.id] = {rot:[0,0,0], pos:[0,0,0], sca:[1,1,1]}; });
         });
     }
 
@@ -122,23 +124,26 @@
         scene.add(new THREE.GridHelper(10, 20, 0x333333, 0x222222));
         pivots = {}; clickables = [];
 
-        Object.keys(CONFIG).forEach(name => {
+        Object.keys(SKELETON).forEach(name => {
             const pivot = new THREE.Group();
             pivot.name = name; pivots[name] = pivot;
-            const cfg = CONFIG[name];
-            const dot = new THREE.Mesh(new THREE.SphereGeometry(0.05), new THREE.MeshBasicMaterial());
+            const cfg = SKELETON[name];
+            const dot = new THREE.Mesh(new THREE.SphereGeometry(0.06), new THREE.MeshBasicMaterial());
             dot.userData.id = name; pivot.add(dot); clickables.push(dot);
 
             if (!cfg.p) scene.add(pivot);
             else {
                 const parent = pivots[cfg.p];
                 if (cfg.offset) pivot.position.set(...cfg.offset);
-                else pivot.position.set(CONFIG[cfg.p].d[0]*CONFIG[cfg.p].l, CONFIG[cfg.p].d[1]*CONFIG[cfg.p].l, CONFIG[cfg.p].d[2]*CONFIG[cfg.p].l);
+                else {
+                    const pCfg = SKELETON[cfg.p];
+                    pivot.position.set(pCfg.d[0]*pCfg.l, pCfg.d[1]*pCfg.l, pCfg.d[2]*pCfg.l);
+                }
                 parent.add(pivot);
             }
         });
 
-        RIGS[current].boxes.forEach(b => {
+        DATA[current].armor.forEach(b => {
             const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.4), new THREE.MeshBasicMaterial({wireframe:true}));
             mesh.userData.id = b.id; mesh.userData.isBox = true;
             pivots[b.parentId].add(mesh); pivots[b.id] = mesh; clickables.push(mesh);
@@ -147,49 +152,50 @@
     }
 
     function updateUI() {
-        const data = RIGS[current].pose[selected];
+        const pose = DATA[current].pose[selected];
         document.getElementById('bone-label').innerText = selected;
         document.getElementById('armor-ui').style.display = selected.startsWith("Box") ? "block" : "none";
         
-        ['rotX', 'rotY', 'rotZ'].forEach((id, i) => document.getElementById(id).value = data.rot[i]);
+        ['rotX', 'rotY', 'rotZ'].forEach((id, i) => document.getElementById(id).value = pose.rot[i]);
         if(selected.startsWith("Box")) {
             ['X','Y','Z'].forEach((a, i) => {
-                document.getElementById('pos'+a).value = data.pos[i];
-                document.getElementById('sca'+a).value = data.sca[i];
+                document.getElementById('pos'+a).value = pose.pos[i];
+                document.getElementById('sca'+a).value = pose.sca[i];
             });
         }
 
         Object.keys(pivots).forEach(id => {
-            const p = pivots[id], d = RIGS[current].pose[id];
+            const p = pivots[id], d = DATA[current].pose[id];
             p.quaternion.set(0,0,0,1);
             p.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,0,0), d.rot[0]));
             p.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), d.rot[1]));
             p.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,0,1), d.rot[2]));
-            if(!p.isGroup) { p.position.set(...d.pos); p.scale.set(...d.sca); }
+            if(p.userData.isBox) { p.position.set(...d.pos); p.scale.set(...d.sca); }
             p.traverse(c => { if(c.isMesh) c.material.color.set(id === selected ? 0xffff00 : (c.userData.isBox ? 0x00ff88 : 0xffffff)); });
         });
     }
 
     window.addBox = () => {
-        const id = "Box_" + Math.random().toString(36).substr(2, 5);
-        RIGS.rig1.boxes.push({ id, parentId: selected });
-        RIGS.rig1.pose[id] = { rot:[0,0,0], pos:[0,0,0], sca:[1,1,1] };
+        if(current !== 'rigA') return alert("Structure changes allowed on Humanoid A only.");
+        const id = "Box_" + Math.random().toString(36).substr(2, 4).toUpperCase();
+        DATA.rigA.armor.push({ id, parentId: selected });
+        DATA.rigA.pose[id] = { rot:[0,0,0], pos:[0,0,0], sca:[1,1,1] };
         syncStructure(); rebuild(); selected = id; updateUI();
     };
 
     window.deleteSelected = () => {
-        if (!selected.startsWith("Box")) return;
-        RIGS.rig1.boxes = RIGS.rig1.boxes.filter(b => b.id !== selected);
+        if (!selected.startsWith("Box") || current !== 'rigA') return;
+        DATA.rigA.armor = DATA.rigA.armor.filter(b => b.id !== selected);
         syncStructure(); selected = "Root"; rebuild();
     };
 
     const bind = (id, fn) => document.getElementById(id).oninput = (e) => { fn(parseFloat(e.target.value)); updateUI(); };
-    bind('rotX', v => RIGS[current].pose[selected].rot[0] = v);
-    bind('rotY', v => RIGS[current].pose[selected].rot[1] = v);
-    bind('rotZ', v => RIGS[current].pose[selected].rot[2] = v);
+    bind('rotX', v => DATA[current].pose[selected].rot[0] = v);
+    bind('rotY', v => DATA[current].pose[selected].rot[1] = v);
+    bind('rotZ', v => DATA[current].pose[selected].rot[2] = v);
     ['X','Y','Z'].forEach((a, i) => {
-        bind('pos'+a, v => RIGS[current].pose[selected].pos[i] = v);
-        bind('sca'+a, v => RIGS[current].pose[selected].sca[i] = v);
+        bind('pos'+a, v => DATA[current].pose[selected].pos[i] = v);
+        bind('sca'+a, v => DATA[current].pose[selected].sca[i] = v);
     });
 
     renderer.domElement.addEventListener('pointerdown', (e) => {
