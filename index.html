@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Mecha Lab: True Isolation</title>
+    <title>Mecha Lab: Independent Mirroring</title>
     <style>
         body { margin: 0; background: #050505; color: white; font-family: 'Segoe UI', sans-serif; overflow: hidden; touch-action: none; user-select: none; }
         #nav-bar { position: absolute; top: 0; width: 100%; display: flex; background: #111; z-index: 200; border-bottom: 1px solid #333; height: 40px; }
@@ -20,7 +20,7 @@
         .row { display: flex; align-items: center; gap: 5px; margin-top: 5px; }
         button { flex: 1; padding: 8px; cursor: pointer; background: #222; color: white; border: 1px solid #444; border-radius: 4px; font-size: 9px; font-weight: bold; text-transform: uppercase; }
         .active-tool { background: #004d40; border-color: #00ffff; color: #00ffff; }
-        .toggle-on { border-color: #00ffff; color: #00ffff; background: #1a1a1a; }
+        .toggle-on { border-color: #00ffff !important; color: #00ffff !important; box-shadow: 0 0 5px #00ffff; }
         
         #footer { position: absolute; bottom: 20px; left: 20px; z-index: 150; display: flex; gap: 10px; }
         .btn-main { padding: 12px 18px; background: #2e7d32; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; text-transform: uppercase; font-size: 10px; }
@@ -36,7 +36,7 @@
 <div id="ui">
     <div id="bone-label">Select Something</div>
     
-    <button id="btn-global-mirror" onclick="toggleMirror()" style="width:100%; margin-bottom:10px;">Mirror Line: OFF</button>
+    <button id="btn-mirror-toggle" onclick="toggleMirror()" style="width:100%; margin-bottom:10px;">Mirror: OFF</button>
 
     <div class="section-label">Pose / Bone Rotation</div>
     <label>Swing X</label><input type="range" id="rotX" min="-3.14" max="3.14" step="0.01" value="0">
@@ -88,7 +88,13 @@
         "R_Thigh": { p: "Pelvis", l: 1.1, d: [-0.3,-1,0] }, "R_Calf": { p: "R_Thigh", l: 0.9, d: [0,-1,0] }
     };
 
-    let currentTab = 'vehicle', activeObject = null, selectedBoneName = null, activeRig = null, mirrorVisible = false;
+    let currentTab = 'vehicle';
+    let tabState = {
+        vehicle: { mirror: false, activeObj: null },
+        humanoid: { mirror: false, activeObj: null }
+    };
+
+    let selectedBoneName = null, activeRig = null;
     
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 100);
@@ -106,7 +112,6 @@
         new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,20), new THREE.Vector3(0,0,-20)]),
         new THREE.LineBasicMaterial({ color: 0xff0000 })
     );
-    mirrorLine.visible = false;
     scene.add(mirrorLine);
 
     scene.add(new THREE.AmbientLight(0xffffff, 0.4));
@@ -116,12 +121,14 @@
     let masterHumanoid = null;
 
     class RigInstance {
-        constructor(isMaster = false) {
+        constructor(isMaster = false, isMirror = false) {
             this.isMaster = isMaster;
+            this.isMirror = isMirror;
             this.group = new THREE.Group();
             this.pivots = {};
             this.visuals = {};
             this.pose = Object.fromEntries(Object.keys(JOINT_CFG).map(n => [n, [0,0,0]]));
+            this.mirrorPartner = null;
             
             Object.keys(JOINT_CFG).forEach(name => {
                 const pivot = new THREE.Group();
@@ -130,7 +137,7 @@
                 
                 const dot = new THREE.Mesh(
                     name === "Root" ? new THREE.BoxGeometry(0.3, 0.05, 0.3) : new THREE.SphereGeometry(0.06),
-                    new THREE.MeshStandardMaterial({color: 0xffffff})
+                    new THREE.MeshStandardMaterial({color: isMirror ? 0x8888ff : 0xffffff, transparent: isMirror, opacity: isMirror ? 0.6 : 1})
                 );
                 dot.userData = { type: 'bone', boneName: name, rig: this };
                 pivot.add(dot);
@@ -165,8 +172,17 @@
                 let sAxis = (Math.abs(d.y)>0.5 || name==="Root" || name==="Spine") ? new THREE.Vector3(1,0,0) : new THREE.Vector3(0,1,0);
                 p.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(sAxis, x));
                 p.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(d.length()===0?new THREE.Vector3(0,1,0):d, y));
-                this.visuals[name].material.emissive.setHex((this === activeRig && name === selectedBoneName) ? 0xffff00 : 0x000000);
+                
+                const isSelected = (this === tabState[currentTab].activeObj?.userData.rig && name === selectedBoneName);
+                this.visuals[name].material.emissive.setHex(isSelected ? 0xffff00 : 0x000000);
             });
+
+            if (this.mirrorPartner && !this.isMirror) {
+                this.mirrorPartner.group.position.set(-this.group.position.x, this.group.position.y, this.group.position.z);
+                this.mirrorPartner.group.rotation.set(this.group.rotation.x, -this.group.rotation.y, -this.group.rotation.z);
+                this.mirrorPartner.pose = JSON.parse(JSON.stringify(this.pose));
+                this.mirrorPartner.update();
+            }
         }
     }
 
@@ -176,23 +192,36 @@
         const b = new THREE.Mesh(new THREE.BoxGeometry(1,1,1), new THREE.MeshStandardMaterial({color: 0x444444}));
         b.userData = { type: 'box' };
         scene.add(b); boxes.push(b);
+
+        if (tabState.vehicle.mirror) {
+            const m = new THREE.Mesh(b.geometry, new THREE.MeshStandardMaterial({color: 0x8888ff, transparent: true, opacity: 0.5}));
+            m.userData = { type: 'box', isMirror: true };
+            b.userData.mirrorPartner = m;
+            scene.add(m); boxes.push(m);
+        }
         selectObject(b);
     };
 
     window.spawnVehicleRig = () => {
         const r = new RigInstance(false);
         r.group.position.set(2, 0, 0);
+        if (tabState.vehicle.mirror) {
+            const m = new RigInstance(false, true);
+            r.mirrorPartner = m;
+        }
         selectObject(r.visuals["Root"]);
     };
 
     function selectObject(obj) {
-        if (activeObject && activeObject.userData.type === 'box') activeObject.material.emissive.setHex(0x000000);
-        activeObject = obj;
+        if (tabState[currentTab].activeObj?.userData.type === 'box') {
+            tabState[currentTab].activeObj.material.emissive.setHex(0x000000);
+        }
         
-        if (!obj) {
+        tabState[currentTab].activeObj = obj;
+        if (!obj || obj.userData.isMirror) {
             transformGizmo.detach();
             selectedBoneName = null; activeRig = null;
-            document.getElementById('bone-label').innerText = "None Selected";
+            document.getElementById('bone-label').innerText = "None";
             return;
         }
 
@@ -204,8 +233,6 @@
         } else if (obj.userData.type === 'bone') {
             activeRig = obj.userData.rig;
             selectedBoneName = obj.userData.boneName;
-            
-            // In Vehicle Tab, allow full group movement. In Humanoid Tab, just Pose.
             if (currentTab === 'vehicle') transformGizmo.attach(activeRig.group);
             else transformGizmo.detach();
 
@@ -221,8 +248,9 @@
     }
 
     function syncUI() {
-        if (!activeObject) return;
-        const target = (activeObject.userData.type === 'bone') ? activeObject.userData.rig.group : activeObject;
+        const obj = tabState[currentTab].activeObj;
+        if (!obj) return;
+        const target = (obj.userData.type === 'bone') ? obj.userData.rig.group : obj;
         document.getElementById('px').value = target.position.x.toFixed(2);
         document.getElementById('py').value = target.position.y.toFixed(2);
         document.getElementById('pz').value = target.position.z.toFixed(2);
@@ -231,15 +259,21 @@
         document.getElementById('rz').value = target.rotation.z.toFixed(2);
     }
 
-    const bind = (id, path, prop) => {
+    const bindUI = (id, path, prop) => {
         document.getElementById(id).addEventListener('input', (e) => {
-            if (!activeObject) return;
-            const target = (activeObject.userData.type === 'bone') ? activeObject.userData.rig.group : activeObject;
+            const obj = tabState[currentTab].activeObj;
+            if (!obj) return;
+            const target = (obj.userData.type === 'bone') ? obj.userData.rig.group : obj;
             target[path][prop] = parseFloat(e.target.value) || 0;
+            if (obj.userData.mirrorPartner) {
+                const m = obj.userData.mirrorPartner;
+                if (prop === 'x' && path === 'position') m.position.x = -target.position.x;
+                else m[path][prop] = target[path][prop];
+            }
         });
     };
-    bind('px', 'position', 'x'); bind('py', 'position', 'y'); bind('pz', 'position', 'z');
-    bind('rx', 'rotation', 'x'); bind('ry', 'rotation', 'y'); bind('rz', 'rotation', 'z');
+    bindUI('px', 'position', 'x'); bindUI('py', 'position', 'y'); bindUI('pz', 'position', 'z');
+    bindUI('rx', 'rotation', 'x'); bindUI('ry', 'rotation', 'y'); bindUI('rz', 'rotation', 'z');
 
     ['rotX', 'rotZ', 'rotY'].forEach((id, idx) => {
         document.getElementById(id).oninput = (e) => {
@@ -250,14 +284,23 @@
         };
     });
 
-    transformGizmo.addEventListener('change', syncUI);
+    transformGizmo.addEventListener('change', () => {
+        const obj = tabState[currentTab].activeObj;
+        if (obj && obj.userData.mirrorPartner) {
+            const target = (obj.userData.type === 'bone') ? obj.userData.rig.group : obj;
+            const m = obj.userData.mirrorPartner;
+            m.position.set(-target.position.x, target.position.y, target.position.z);
+            m.rotation.set(target.rotation.x, -target.rotation.y, -target.rotation.z);
+        }
+        syncUI();
+    });
 
     window.toggleMirror = () => {
-        mirrorVisible = !mirrorVisible;
-        mirrorLine.visible = mirrorVisible;
-        const btn = document.getElementById('btn-global-mirror');
-        btn.innerText = mirrorVisible ? "Mirror Line: ON" : "Mirror Line: OFF";
-        btn.classList.toggle('toggle-on', mirrorVisible);
+        tabState[currentTab].mirror = !tabState[currentTab].mirror;
+        const btn = document.getElementById('btn-mirror-toggle');
+        btn.innerText = `Mirror: ${tabState[currentTab].mirror ? 'ON' : 'OFF'}`;
+        btn.classList.toggle('toggle-on', tabState[currentTab].mirror);
+        mirrorLine.visible = tabState[currentTab].mirror;
     };
 
     window.setGizmoMode = (m) => {
@@ -270,6 +313,12 @@
         masterHumanoid.group.visible = (currentTab === 'humanoid');
         vRigs.forEach(r => r.group.visible = (currentTab === 'vehicle'));
         boxes.forEach(b => b.visible = (currentTab === 'vehicle'));
+        mirrorLine.visible = tabState[currentTab].mirror;
+        
+        const btn = document.getElementById('btn-mirror-toggle');
+        btn.innerText = `Mirror: ${tabState[currentTab].mirror ? 'ON' : 'OFF'}`;
+        btn.classList.toggle('toggle-on', tabState[currentTab].mirror);
+        
         document.getElementById('v-btns').style.display = (currentTab === 'vehicle') ? 'flex' : 'none';
     }
 
@@ -295,13 +344,17 @@
     };
 
     window.deleteActive = () => {
-        if (!activeObject || activeObject.userData.rig?.isMaster) return;
-        if (activeObject.userData.type === 'box') {
-            boxes.splice(boxes.indexOf(activeObject), 1);
-            scene.remove(activeObject);
+        const obj = tabState[currentTab].activeObj;
+        if (!obj || obj.userData.rig?.isMaster) return;
+        if (obj.userData.type === 'box') {
+            if (obj.userData.mirrorPartner) scene.remove(obj.userData.mirrorPartner);
+            boxes.splice(boxes.indexOf(obj), 1);
+            scene.remove(obj);
         } else {
-            vRigs.splice(vRigs.indexOf(activeObject.userData.rig), 1);
-            scene.remove(activeObject.userData.rig.group);
+            const rig = obj.userData.rig;
+            if (rig.mirrorPartner) scene.remove(rig.mirrorPartner.group);
+            vRigs.splice(vRigs.indexOf(rig), 1);
+            scene.remove(rig.group);
         }
         selectObject(null);
     };
