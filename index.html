@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>3D Rig: Multi-Tab Editor</title>
+    <title>3D Rig: Multi-Rig Workspace</title>
     <style>
         body { margin: 0; background: #050505; color: white; font-family: 'Segoe UI', sans-serif; overflow: hidden; touch-action: none; user-select: none; }
         #ui { position: absolute; right: 10px; top: 10px; width: 220px; background: rgba(15, 15, 15, 0.95); padding: 15px; border-radius: 8px; border: 1px solid #444; z-index: 100; }
@@ -19,16 +19,12 @@
         button { width: 100%; padding: 8px; cursor: pointer; background: #222; color: white; border: 1px solid #444; border-radius: 4px; font-size: 10px; font-weight: bold; }
         button:hover { background: #333; }
         
-        #timeline-container { position: absolute; bottom: 0; width: 100%; height: 130px; background: #0a0a0a; border-top: 2px solid #333; z-index: 100; }
-        #timeline-scrubber { width: 100%; height: 35px; background: #151515; position: relative; cursor: ew-resize; border-bottom: 1px solid #333; }
-        #playhead { position: absolute; top: 0; width: 2px; height: 100%; background: #ff0055; pointer-events: none; box-shadow: 0 0 8px #ff0055; z-index: 5; }
-        #frames-list { display: flex; align-items: center; padding: 10px 20px; overflow-x: auto; gap: 12px; height: 85px; }
-        
-        .frame { min-width: 50px; height: 50px; background: #1a1a1a; position: relative; display: flex; align-items: center; justify-content: center; border-radius: 6px; cursor: grab; flex-shrink: 0; border: 2px solid #333; font-size: 12px; color: #777; }
-        .frame.active { border-color: #00ffff; background: #002222; color: #00ffff; }
+        #rig-info { position: absolute; left: 10px; top: 10px; font-size: 10px; color: #555; pointer-events: none; }
     </style>
 </head>
 <body>
+
+<div id="rig-info">Pose State: Persistent</div>
 
 <div id="ui">
     <div class="tabs">
@@ -47,14 +43,8 @@
         <button onclick="mirrorPose('R','L')">R → L</button>
     </div>
     
-    <button onclick="addFrame()" style="background:#1b5e20; margin-top:10px; border:none;">+ NEW FRAME</button>
-    <button id="playBtn" onclick="togglePlay()" style="background:#0d47a1; border:none; margin-top:5px;">PLAY</button>
+    <button onclick="resetPose()" style="margin-top:10px; background:#444;">RESET POSE</button>
     <button onclick="exportJSON()" style="background:#f9a825; border:none; margin-top:5px; color:black;">EXPORT JSON</button>
-</div>
-
-<div id="timeline-container">
-    <div id="timeline-scrubber"><div id="playhead"></div></div>
-    <div id="frames-list"></div>
 </div>
 
 <script type="importmap">
@@ -67,44 +57,51 @@
 
     const RIGS = {
         humanoid: {
-            "Root": { p: null, l: 0, d: [0,0,0] },
-            "Pelvis": { p: "Root", l: 0, d: [0,0,0], offset: [0, 2.05, 0] },
-            "Spine": { p: "Root", l: 0.8, d: [0,1,0], offset: [0, 2.05, 0] },
-            "Pelvis_L": { p: "Pelvis", l: 0.3, d: [1,0,0] },
-            "Pelvis_R": { p: "Pelvis", l: 0.3, d: [-1,0,0] },
-            "Chest": { p: "Spine", l: 0.7, d: [0,1,0] },
-            "Neck": { p: "Chest", l: 0.2, d: [0,1,0] },
-            "Head": { p: "Neck", l: 0.4, d: [0,1,0] },
-            "L_Arm": { p: "Chest", l: 0.7, d: [1,0,0] },
-            "L_Forearm": { p: "L_Arm", l: 0.6, d: [1,0,0] },
-            "R_Arm": { p: "Chest", l: 0.7, d: [-1,0,0] },
-            "R_Forearm": { p: "R_Arm", l: 0.6, d: [-1,0,0] },
-            "L_Thigh": { p: "Pelvis_L", l: 1.1, d: [0,-1,0] },
-            "L_Calf": { p: "L_Thigh", l: 0.9, d: [0,-1,0] },
-            "L_Foot": { p: "L_Calf", l: 0.25, d: [0,0,1] },
-            "R_Thigh": { p: "Pelvis_R", l: 1.1, d: [0,-1,0] },
-            "R_Calf": { p: "R_Thigh", l: 0.9, d: [0,-1,0] },
-            "R_Foot": { p: "R_Calf", l: 0.25, d: [0,0,1] }
+            config: {
+                "Root": { p: null, l: 0, d: [0,0,0] },
+                "Pelvis": { p: "Root", l: 0, d: [0,0,0], offset: [0, 2.05, 0] },
+                "Spine": { p: "Root", l: 0.8, d: [0,1,0], offset: [0, 2.05, 0] },
+                "Pelvis_L": { p: "Pelvis", l: 0.3, d: [1,0,0] },
+                "Pelvis_R": { p: "Pelvis", l: 0.3, d: [-1,0,0] },
+                "Chest": { p: "Spine", l: 0.7, d: [0,1,0] },
+                "Neck": { p: "Chest", l: 0.2, d: [0,1,0] },
+                "Head": { p: "Neck", l: 0.4, d: [0,1,0] },
+                "L_Arm": { p: "Chest", l: 0.7, d: [1,0,0] },
+                "L_Forearm": { p: "L_Arm", l: 0.6, d: [1,0,0] },
+                "R_Arm": { p: "Chest", l: 0.7, d: [-1,0,0] },
+                "R_Forearm": { p: "R_Arm", l: 0.6, d: [-1,0,0] },
+                "L_Thigh": { p: "Pelvis_L", l: 1.1, d: [0,-1,0] },
+                "L_Calf": { p: "L_Thigh", l: 0.9, d: [0,-1,0] },
+                "L_Foot": { p: "L_Calf", l: 0.25, d: [0,0,1] },
+                "R_Thigh": { p: "Pelvis_R", l: 1.1, d: [0,-1,0] },
+                "R_Calf": { p: "R_Thigh", l: 0.9, d: [0,-1,0] },
+                "R_Foot": { p: "R_Calf", l: 0.25, d: [0,0,1] }
+            },
+            pose: {}
         },
         vehicle: {
-            "Chassis": { p: null, l: 0, d: [0,0,0] },
-            "Axle_F": { p: "Chassis", l: 1.2, d: [1,0,0], offset: [0, 0.3, 1.5] },
-            "Axle_R": { p: "Chassis", l: 1.2, d: [1,0,0], offset: [0, 0.3, -1.5] },
-            "Wheel_FL": { p: "Axle_F", l: 0.4, d: [1,0,0] },
-            "Wheel_FR": { p: "Axle_F", l: 0.4, d: [-1,0,0] },
-            "Wheel_RL": { p: "Axle_R", l: 0.4, d: [1,0,0] },
-            "Wheel_RR": { p: "Axle_R", l: 0.4, d: [-1,0,0] },
-            "Turret_Base": { p: "Chassis", l: 0.5, d: [0,1,0], offset: [0, 0.8, 0] },
-            "Barrel": { p: "Turret_Base", l: 1.5, d: [0,0,1] }
+            config: {
+                "Chassis": { p: null, l: 0, d: [0,0,0] },
+                "Axle_F": { p: "Chassis", l: 1.2, d: [1,0,0], offset: [0, 0.3, 1.5] },
+                "Axle_R": { p: "Chassis", l: 1.2, d: [1,0,0], offset: [0, 0.3, -1.5] },
+                "Wheel_FL": { p: "Axle_F", l: 0.4, d: [1,0,0] },
+                "Wheel_FR": { p: "Axle_F", l: 0.4, d: [-1,0,0] },
+                "Wheel_RL": { p: "Axle_R", l: 0.4, d: [1,0,0] },
+                "Wheel_RR": { p: "Axle_R", l: 0.4, d: [-1,0,0] },
+                "Turret_Base": { p: "Chassis", l: 0.5, d: [0,1,0], offset: [0, 0.8, 0] },
+                "Barrel": { p: "Turret_Base", l: 1.5, d: [0,0,1] }
+            },
+            pose: {}
         }
     };
 
+    // Initialize default poses
+    Object.keys(RIGS).forEach(r => {
+        Object.keys(RIGS[r].config).forEach(bone => RIGS[r].pose[bone] = [0,0,0]);
+    });
+
     let currentRigMode = 'humanoid';
-    let config = RIGS.humanoid;
-    let frames = [];
-    let currentIdx = 0;
     let selectedBone = "Root";
-    let isPlaying = false;
     let pivots = {}; 
     let clickables = [];
 
@@ -119,23 +116,27 @@
 
     window.switchRig = (mode) => {
         currentRigMode = mode;
-        config = RIGS[mode];
         document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
         document.getElementById(`tab-${mode}`).classList.add('active');
-        selectedBone = Object.keys(config)[0];
+        selectedBone = Object.keys(RIGS[mode].config)[0];
         rebuildScene();
     };
 
     function rebuildScene() {
         while(scene.children.length > 1) scene.remove(scene.children[1]);
         pivots = {}; clickables = [];
+        const { config } = RIGS[currentRigMode];
+        
         Object.keys(config).forEach(name => {
             const pivot = new THREE.Group();
             pivot.name = name;
             pivots[name] = pivot;
             
             const isRoot = !config[name].p;
-            const dot = new THREE.Mesh(isRoot ? new THREE.BoxGeometry(0.5,0.05,0.5) : new THREE.SphereGeometry(0.06), new THREE.MeshBasicMaterial({color: 0xffffff}));
+            const dot = new THREE.Mesh(
+                isRoot ? new THREE.CylinderGeometry(0.3, 0.3, 0.05, 32) : new THREE.SphereGeometry(0.06), 
+                new THREE.MeshBasicMaterial({color: 0xffffff})
+            );
             pivot.add(dot);
             dot.userData.boneName = name;
             clickables.push(dot);
@@ -161,24 +162,19 @@
                 }
             }
         });
-        frames = [];
-        window.addFrame();
+        updateApp();
     }
 
-    window.addFrame = () => {
-        const newPose = Object.fromEntries(Object.keys(config).map(n => [n, [0,0,0]]));
-        frames.push(newPose);
-        currentIdx = frames.length - 1;
-        updateApp();
-    };
-
     function updateApp() {
-        const pose = frames[currentIdx];
+        const { config, pose } = RIGS[currentRigMode];
         document.getElementById('bone-label').innerText = selectedBone;
+        ['rotX', 'rotY', 'rotZ'].forEach((id, i) => document.getElementById(id).value = pose[selectedBone][i]);
+
         Object.keys(pivots).forEach(name => {
             const pivot = pivots[name];
             const [x,y,z] = pose[name];
             const dir = new THREE.Vector3().fromArray(config[name].d).normalize();
+            
             pivot.quaternion.set(0,0,0,1);
             pivot.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,0,1), z));
             pivot.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,0,0), x));
@@ -186,17 +182,36 @@
             
             pivot.traverse(c => { if(c.isMesh) c.material.color.set(name === selectedBone ? 0xffff00 : 0xffffff); });
         });
-        const list = document.getElementById('frames-list');
-        list.innerHTML = '';
-        frames.forEach((f, i) => {
-            const d = document.createElement('div');
-            d.className = `frame ${i === currentIdx ? 'active' : ''}`;
-            d.innerText = i + 1;
-            d.onclick = () => { currentIdx = i; updateApp(); };
-            list.appendChild(d);
-        });
-        document.getElementById('playhead').style.left = `${(currentIdx/(frames.length-1||1))*100}%`;
     }
+
+    window.resetPose = () => {
+        Object.keys(RIGS[currentRigMode].pose).forEach(bone => RIGS[currentRigMode].pose[bone] = [0,0,0]);
+        updateApp();
+    };
+
+    window.mirrorPose = (from, to) => {
+        const pose = RIGS[currentRigMode].pose;
+        Object.keys(pose).forEach(name => {
+            let target = null;
+            if (name.includes(`_${from}`)) target = name.replace(`_${from}`, `_${to}`);
+            else if (name.startsWith(from + '_')) target = name.replace(from + '_', to + '_');
+            if (target && pose[target]) {
+                const [x, y, z] = pose[name];
+                pose[target] = [-x, -y, -z];
+            }
+        });
+        updateApp();
+    };
+
+    window.exportJSON = () => {
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(RIGS[currentRigMode].pose, null, 2));
+        const downloadAnchorNode = document.createElement('a');
+        downloadAnchorNode.setAttribute("href", dataStr);
+        downloadAnchorNode.setAttribute("download", `${currentRigMode}_pose.json`);
+        document.body.appendChild(downloadAnchorNode);
+        downloadAnchorNode.click();
+        downloadAnchorNode.remove();
+    };
 
     renderer.domElement.addEventListener('pointerdown', (e) => {
         const mouse = new THREE.Vector2((e.clientX/window.innerWidth)*2-1, -(e.clientY/window.innerHeight)*2+1);
@@ -208,7 +223,7 @@
 
     ['rotX', 'rotY', 'rotZ'].forEach((id, axis) => {
         document.getElementById(id).oninput = (e) => {
-            frames[currentIdx][selectedBone][axis] = parseFloat(e.target.value);
+            RIGS[currentRigMode].pose[selectedBone][axis] = parseFloat(e.target.value);
             updateApp();
         };
     });
