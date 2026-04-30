@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Mecha Lab: Static Rig & Vehicle Builder</title>
+    <title>Mecha Lab: Gizmo Edition</title>
     <style>
         body { margin: 0; background: #050505; color: white; font-family: 'Segoe UI', sans-serif; overflow: hidden; touch-action: none; user-select: none; }
         #nav-bar { position: absolute; top: 0; width: 100%; display: flex; background: #111; z-index: 200; border-bottom: 1px solid #333; height: 40px; }
@@ -16,6 +16,7 @@
         .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-top: 10px; }
         button { width: 100%; padding: 8px; cursor: pointer; background: #222; color: white; border: 1px solid #444; border-radius: 4px; font-size: 10px; font-weight: bold; text-transform: uppercase; }
         button:hover { background: #333; }
+        .active-tool { background: #004d40; border-color: #00ffff; }
         
         #vehicle-footer { position: absolute; bottom: 20px; left: 20px; z-index: 150; }
         .build-btn { padding: 12px 25px; background: #2e7d32; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; text-transform: uppercase; }
@@ -43,14 +44,18 @@
 
     <div id="pane-vehicle">
         <label id="part-label" style="color:#00ffff; text-align:center; font-weight:bold;">No Selection</label>
-        <label>Position X/Y/Z</label>
-        <input type="range" id="px" min="-5" max="5" step="0.1" value="0">
-        <input type="range" id="py" min="0" max="5" step="0.1" value="0.5">
-        <input type="range" id="pz" min="-5" max="5" step="0.1" value="0">
-        <label>Scale W/H/D</label>
+        
+        <label>Gizmo Mode</label>
+        <div class="btn-group">
+            <button id="btn-translate" class="active-tool" onclick="setGizmoMode('translate')">Move</button>
+            <button id="btn-rotate" onclick="setGizmoMode('rotate')">Rotate</button>
+        </div>
+
+        <label>Manual Scale W/H/D</label>
         <input type="range" id="sx" min="0.1" max="5" step="0.1" value="1">
         <input type="range" id="sy" min="0.1" max="5" step="0.1" value="1">
         <input type="range" id="sz" min="0.1" max="5" step="0.1" value="1">
+
         <button onclick="window.deleteBox()" style="background:#b71c1c; margin-top:15px; border:none;">Delete Selected</button>
     </div>
 </div>
@@ -60,12 +65,19 @@
 </div>
 
 <script type="importmap">
-    { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js", "controls": "https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js" } }
+    { 
+        "imports": { 
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js", 
+            "controls": "https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js",
+            "gizmo": "https://unpkg.com/three@0.160.0/examples/jsm/controls/TransformControls.js"
+        } 
+    }
 </script>
 
 <script type="module">
     import * as THREE from 'three';
     import { OrbitControls } from 'controls';
+    import { TransformControls } from 'gizmo';
 
     const config = {
         "Root": { p: null, l: 0, d: [0,0,0] }, 
@@ -89,14 +101,20 @@
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
+    
     const controls = new OrbitControls(camera, renderer.domElement);
+    const transformGizmo = new TransformControls(camera, renderer.domElement);
+    
     scene.add(new THREE.GridHelper(10, 20, 0x333333, 0x222222));
     scene.add(new THREE.AmbientLight(0xffffff, 0.6));
     const dl = new THREE.DirectionalLight(0xffffff, 0.8); dl.position.set(5,10,5); scene.add(dl);
 
-    const boxHelper = new THREE.BoxHelper(new THREE.Mesh(), 0x00ffff);
-    boxHelper.visible = false;
-    scene.add(boxHelper);
+    scene.add(transformGizmo);
+
+    // Prevent orbit controls from moving when using gizmo
+    transformGizmo.addEventListener('dragging-changed', (event) => {
+        controls.enabled = !event.value;
+    });
 
     Object.keys(config).forEach(name => {
         const pivot = new THREE.Group();
@@ -142,22 +160,27 @@
 
     window.deleteBox = () => {
         if (!activeBox) return;
+        transformGizmo.detach();
         scene.remove(activeBox);
         boxes = boxes.filter(b => b !== activeBox);
-        activeBox = null; boxHelper.visible = false;
+        activeBox = null;
         document.getElementById('part-label').innerText = "No Selection";
     };
 
     function setActiveBox(mesh) {
         activeBox = mesh;
-        boxHelper.setFromObject(mesh);
-        boxHelper.visible = true;
+        transformGizmo.attach(mesh);
         document.getElementById('part-label').innerText = "Selected Box";
-        ['sx','sy','sz','px','py','pz'].forEach(id => {
-            let prop = id.startsWith('s') ? 'scale' : 'position';
-            document.getElementById(id).value = mesh[prop][id.charAt(1)];
+        ['sx','sy','sz'].forEach(id => {
+            document.getElementById(id).value = mesh.scale[id.charAt(1)];
         });
     }
+
+    window.setGizmoMode = (mode) => {
+        transformGizmo.setMode(mode);
+        document.getElementById('btn-translate').classList.toggle('active-tool', mode === 'translate');
+        document.getElementById('btn-rotate').classList.toggle('active-tool', mode === 'rotate');
+    };
 
     window.mirrorPose = (from, to) => {
         Object.keys(pose).forEach(name => {
@@ -186,13 +209,12 @@
             let swingAxis = (Math.abs(boneDir.y) > 0.5 || name === "Root" || name === "Pelvis" || name === "Spine") ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
             pivot.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(swingAxis, x));
             pivot.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(boneDir.length() === 0 ? new THREE.Vector3(0,1,0) : boneDir, y));
-            
             pivot.traverse(c => { if(c.isMesh) c.material.color.set(name === selectedBone ? 0xffff00 : 0xffffff); });
         });
 
         boxes.forEach(b => b.visible = (currentTab === 'vehicle'));
-        boxHelper.visible = (currentTab === 'vehicle' && activeBox);
-        if(activeBox) boxHelper.update();
+        if (currentTab === 'humanoid') transformGizmo.detach();
+        else if (activeBox) transformGizmo.attach(activeBox);
     }
 
     ['rotX', 'rotY', 'rotZ'].forEach((id, axis) => {
@@ -202,18 +224,14 @@
         };
     });
 
-    ['sx','sy','sz','px','py','pz'].forEach(id => {
+    ['sx','sy','sz'].forEach(id => {
         document.getElementById(id).oninput = (e) => { 
-            if (activeBox) {
-                const val = parseFloat(e.target.value);
-                if (id.startsWith('s')) activeBox.scale[id.charAt(1)] = val;
-                else activeBox.position[id.charAt(1)] = val;
-                boxHelper.update();
-            }
+            if (activeBox) activeBox.scale[id.charAt(1)] = parseFloat(e.target.value);
         };
     });
 
     renderer.domElement.addEventListener('pointerdown', (e) => {
+        if (transformGizmo.dragging) return;
         const mouse = new THREE.Vector2((e.clientX/window.innerWidth)*2-1, -(e.clientY/window.innerHeight)*2+1);
         const raycaster = new THREE.Raycaster();
         raycaster.setFromCamera(mouse, camera);
@@ -221,7 +239,10 @@
         if (currentTab === 'vehicle') {
             const hit = raycaster.intersectObjects(boxes)[0];
             if (hit) setActiveBox(hit.object);
-            else { activeBox = null; boxHelper.visible = false; document.getElementById('part-label').innerText = "No Selection"; }
+            else if (!transformGizmo.dragging) {
+                activeBox = null; transformGizmo.detach();
+                document.getElementById('part-label').innerText = "No Selection";
+            }
         } else {
             const hit = raycaster.intersectObjects(clickables)[0];
             if (hit) { selectedBone = hit.object.userData.boneName; updateApp(); }
