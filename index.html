@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Mecha Lab: Fixed Rig & Gizmo</title>
+    <title>Mecha Lab: Connected Pelvis</title>
     <style>
         body { margin: 0; background: #050505; color: white; font-family: 'Segoe UI', sans-serif; overflow: hidden; touch-action: none; user-select: none; }
         #nav-bar { position: absolute; top: 0; width: 100%; display: flex; background: #111; z-index: 200; border-bottom: 1px solid #333; height: 40px; }
@@ -78,17 +78,21 @@
 
     const JOINT_CFG = {
         "Root": { p: null, l: 0, d: [0,0,0] }, 
-        "Pelvis": { p: "Root", l: 0, d: [0,0,0], offset: [0, 1.8, 0] }, 
-        "Spine": { p: "Pelvis", l: 0.8, d: [0,1,0], offset: [0, 0, 0] }, 
-        "Chest": { p: "Spine", l: 0.7, d: [0,1,0] }, 
-        "Neck": { p: "Chest", l: 0.2, d: [0,1,0] }, 
-        "Head": { p: "Neck", l: 0.4, d: [0,1,0] },
-        "L_Arm": { p: "Chest", l: 0.7, d: [1,0,0] }, "L_Forearm": { p: "L_Arm", l: 0.6, d: [1,0,0] },
-        "R_Arm": { p: "Chest", l: 0.7, d: [-1,0,0] }, "R_Forearm": { p: "R_Arm", l: 0.6, d: [-1,0,0] },
-        "L_Thigh": { p: "Pelvis", l: 1.1, d: [0,-1,0], offset: [0.3, 0, 0] }, 
-        "L_Calf": { p: "L_Thigh", l: 0.9, d: [0,-1,0] }, 
-        "R_Thigh": { p: "Pelvis", l: 1.1, d: [0,-1,0], offset: [-0.3, 0, 0] }, 
-        "R_Calf": { p: "R_Thigh", l: 0.9, d: [0,-1,0] }
+        "Pelvis": { p: "Root", l: 0, d: [0,0,0], offset: [0, 1.0, 0] }, 
+        "Spine": { p: "Pelvis", l: 0.4, d: [0,1,0] }, 
+        "Chest": { p: "Spine", l: 0.4, d: [0,1,0] }, 
+        "Neck": { p: "Chest", l: 0.1, d: [0,1,0] }, 
+        "Head": { p: "Neck", l: 0.25, d: [0,1,0] },
+        "L_Arm": { p: "Chest", l: 0.4, d: [1,0,0], offset: [0.2, 0.1, 0] }, 
+        "L_Forearm": { p: "L_Arm", l: 0.4, d: [1,0,0] },
+        "R_Arm": { p: "Chest", l: 0.4, d: [-1,0,0], offset: [-0.2, 0.1, 0] }, 
+        "R_Forearm": { p: "R_Arm", l: 0.4, d: [-1,0,0] },
+        "L_Thigh": { p: "Pelvis", l: 0.45, d: [0,-1,0], offset: [0.15, 0, 0] }, 
+        "L_Calf": { p: "L_Thigh", l: 0.45, d: [0,-1,0] }, 
+        "L_Foot": { p: "L_Calf", l: 0.15, d: [0,0,1] },
+        "R_Thigh": { p: "Pelvis", l: 0.45, d: [0,-1,0], offset: [-0.15, 0, 0] }, 
+        "R_Calf": { p: "R_Thigh", l: 0.45, d: [0,-1,0] },
+        "R_Foot": { p: "R_Calf", l: 0.15, d: [0,0,1] }
     };
 
     let currentTab = 'vehicle';
@@ -99,29 +103,26 @@
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 100);
-    camera.position.set(10, 5, 15);
+    camera.position.set(5, 3, 8);
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
     
     const controls = new OrbitControls(camera, renderer.domElement);
     const transformGizmo = new TransformControls(camera, renderer.domElement);
-    scene.add(new THREE.GridHelper(40, 40, 0x333333, 0x222222));
+    scene.add(new THREE.GridHelper(20, 20, 0x333333, 0x222222));
     scene.add(transformGizmo);
 
-    // LOCK CONTROLS WHEN USING GIZMO
-    transformGizmo.addEventListener('dragging-changed', (e) => {
-        controls.enabled = !e.value;
-    });
+    transformGizmo.addEventListener('dragging-changed', (e) => { controls.enabled = !e.value; });
 
     const mirrorLine = new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,20), new THREE.Vector3(0,0,-20)]),
+        new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,10), new THREE.Vector3(0,0,-10)]),
         new THREE.LineBasicMaterial({ color: 0xff0000 })
     );
     scene.add(mirrorLine);
 
-    scene.add(new THREE.AmbientLight(0xffffff, 0.4));
-    const sun = new THREE.DirectionalLight(0xffffff, 0.8); sun.position.set(10,20,10); scene.add(sun);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+    const sun = new THREE.DirectionalLight(0xffffff, 0.7); sun.position.set(5,10,5); scene.add(sun);
 
     const boxes = [], vRigs = [];
     let masterHumanoid = null;
@@ -142,7 +143,7 @@
                 const cfg = JOINT_CFG[name];
                 
                 const dot = new THREE.Mesh(
-                    name === "Root" ? new THREE.BoxGeometry(0.4, 0.05, 0.4) : new THREE.SphereGeometry(0.06),
+                    name === "Root" ? new THREE.BoxGeometry(0.3, 0.02, 0.3) : new THREE.SphereGeometry(0.04),
                     new THREE.MeshStandardMaterial({color: isMirror ? 0x8888ff : 0xffffff, transparent: isMirror, opacity: isMirror ? 0.6 : 1})
                 );
                 dot.userData = { type: 'bone', boneName: name, rig: this };
@@ -152,17 +153,27 @@
                 if (!cfg.p) this.group.add(pivot);
                 else {
                     const parentP = this.pivots[cfg.p];
-                    if (cfg.offset) pivot.position.set(...cfg.offset);
-                    else {
+                    if (cfg.offset) {
+                        pivot.position.set(...cfg.offset);
+                        // Add visual connecting bone for offset joints (hips/shoulders)
+                        const dist = new THREE.Vector3(...cfg.offset).length();
+                        if (dist > 0.01) {
+                            const conn = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, dist), new THREE.MeshStandardMaterial({color: 0x333333}));
+                            conn.position.set(cfg.offset[0]/2, cfg.offset[1]/2, cfg.offset[2]/2);
+                            conn.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), new THREE.Vector3(...cfg.offset).normalize());
+                            parentP.add(conn);
+                        }
+                    } else {
                         const pCfg = JOINT_CFG[cfg.p];
                         pivot.position.set(pCfg.d[0]*pCfg.l, pCfg.d[1]*pCfg.l, pCfg.d[2]*pCfg.l);
                     }
                     parentP.add(pivot);
                     
                     if (cfg.l > 0) {
-                        const bone = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, cfg.l), new THREE.MeshStandardMaterial({color: 0x555555}));
+                        const bone = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, cfg.l), new THREE.MeshStandardMaterial({color: 0x666666}));
                         bone.position.set(cfg.d[0]*cfg.l/2, cfg.d[1]*cfg.l/2, cfg.d[2]*cfg.l/2);
-                        if(cfg.d[0]!==0) bone.rotation.z=Math.PI/2; else if(cfg.d[2]!==0) bone.rotation.x=Math.PI/2;
+                        if(cfg.d[0]!==0) bone.rotation.z=Math.PI/2; 
+                        else if(cfg.d[2]!==0) bone.rotation.x=Math.PI/2;
                         pivot.add(bone);
                     }
                 }
@@ -198,7 +209,7 @@
     masterHumanoid = new RigInstance(true);
 
     window.addBox = () => {
-        const b = new THREE.Mesh(new THREE.BoxGeometry(1,1,1), new THREE.MeshStandardMaterial({color: 0x444444}));
+        const b = new THREE.Mesh(new THREE.BoxGeometry(0.5,0.5,0.5), new THREE.MeshStandardMaterial({color: 0x444444}));
         b.userData = { type: 'box' };
         scene.add(b); boxes.push(b);
         if (tabState.vehicle.mirror) {
@@ -212,7 +223,7 @@
 
     window.spawnVehicleRig = () => {
         const r = new RigInstance(false);
-        r.group.position.set(2, 0, 0);
+        r.group.position.set(1.5, 0, 0);
         if (tabState.vehicle.mirror) r.mirrorPartner = new RigInstance(false, true);
         selectObject(r.visuals["Root"]);
     };
@@ -271,8 +282,9 @@
             target[path][prop] = parseFloat(e.target.value) || 0;
             if (obj.userData.mirrorPartner) {
                 const m = obj.userData.mirrorPartner;
-                if (prop === 'x' && path === 'position') m.position.x = -target.position.x;
-                else m[path][prop] = target[path][prop];
+                const mTarget = m.group || m;
+                if (prop === 'x' && path === 'position') mTarget.position.x = -target.position.x;
+                else mTarget[path][prop] = target[path][prop];
             }
         });
     };
@@ -321,7 +333,6 @@
         const btn = document.getElementById('btn-mirror-toggle');
         btn.innerText = `Mirror: ${tabState[currentTab].mirror ? 'ON' : 'OFF'}`;
         btn.classList.toggle('toggle-on', tabState[currentTab].mirror);
-        
         document.getElementById('v-btns').style.display = (currentTab === 'vehicle') ? 'flex' : 'none';
     }
 
