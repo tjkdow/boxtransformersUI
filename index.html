@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>3D Rig: Multi-Rig Workspace</title>
+    <title>3D Rig: Shared Armor / Unique Pose</title>
     <style>
         body { margin: 0; background: #050505; color: white; font-family: 'Segoe UI', sans-serif; overflow: hidden; touch-action: none; user-select: none; }
         #ui { position: absolute; right: 10px; top: 10px; width: 220px; background: rgba(15, 15, 15, 0.95); padding: 15px; border-radius: 8px; border: 1px solid #444; z-index: 100; }
@@ -11,28 +11,25 @@
         .tab { flex: 1; padding: 8px; font-size: 10px; text-align: center; cursor: pointer; background: #333; border-radius: 2px; font-weight: bold; }
         .tab.active { background: #00ffff; color: #000; }
 
-        #bone-label { font-size: 16px; font-weight: bold; color: #00ffff; display: block; margin-bottom: 10px; }
+        #bone-label { font-size: 14px; font-weight: bold; color: #00ffff; display: block; margin-bottom: 10px; overflow: hidden; text-overflow: ellipsis; }
         label { display: block; font-size: 10px; color: #888; margin-top: 8px; text-transform: uppercase; }
         input[type=range] { width: 100%; cursor: pointer; margin-bottom: 4px; accent-color: #00ffff; }
         
         .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-top: 10px; }
         button { width: 100%; padding: 8px; cursor: pointer; background: #222; color: white; border: 1px solid #444; border-radius: 4px; font-size: 10px; font-weight: bold; }
         button:hover { background: #333; }
-        
-        #rig-info { position: absolute; left: 10px; top: 10px; font-size: 10px; color: #555; pointer-events: none; }
+        .danger { background: #441111; color: #ff5555; border-color: #662222; }
     </style>
 </head>
 <body>
 
-<div id="rig-info">Pose State: Persistent</div>
-
 <div id="ui">
     <div class="tabs">
-        <div class="tab active" id="tab-humanoid" onclick="switchRig('humanoid')">HUMANOID</div>
-        <div class="tab" id="tab-vehicle" onclick="switchRig('vehicle')">VEHICLE</div>
+        <div class="tab active" id="tab-rig1" onclick="switchRig('rig1')">MASTER (A)</div>
+        <div class="tab" id="tab-rig2" onclick="switchRig('rig2')">VARIANT (B)</div>
     </div>
 
-    <label>Active Joint</label>
+    <label>Active Element</label>
     <span id="bone-label">Root</span>
     <label>Swing X</label><input type="range" id="rotX" min="-3.14" max="3.14" step="0.01" value="0">
     <label>Swing Z</label><input type="range" id="rotZ" min="-3.14" max="3.14" step="0.01" value="0">
@@ -43,8 +40,12 @@
         <button onclick="mirrorPose('R','L')">R → L</button>
     </div>
     
-    <button onclick="resetPose()" style="margin-top:10px; background:#444;">RESET POSE</button>
-    <button onclick="exportJSON()" style="background:#f9a825; border:none; margin-top:5px; color:black;">EXPORT JSON</button>
+    <div class="btn-group">
+        <button onclick="addBox()" style="background:#1b5e20; border:none;">ADD BOX</button>
+        <button onclick="deleteSelected()" class="danger">DELETE</button>
+    </div>
+    
+    <button onclick="exportJSON()" style="background:#f9a825; border:none; margin-top:10px; color:black; width:100%;">EXPORT POSE</button>
 </div>
 
 <script type="importmap">
@@ -55,54 +56,40 @@
     import * as THREE from 'three';
     import { OrbitControls } from 'controls';
 
-    const RIGS = {
-        humanoid: {
-            config: {
-                "Root": { p: null, l: 0, d: [0,0,0] },
-                "Pelvis": { p: "Root", l: 0, d: [0,0,0], offset: [0, 2.05, 0] },
-                "Spine": { p: "Root", l: 0.8, d: [0,1,0], offset: [0, 2.05, 0] },
-                "Pelvis_L": { p: "Pelvis", l: 0.3, d: [1,0,0] },
-                "Pelvis_R": { p: "Pelvis", l: 0.3, d: [-1,0,0] },
-                "Chest": { p: "Spine", l: 0.7, d: [0,1,0] },
-                "Neck": { p: "Chest", l: 0.2, d: [0,1,0] },
-                "Head": { p: "Neck", l: 0.4, d: [0,1,0] },
-                "L_Arm": { p: "Chest", l: 0.7, d: [1,0,0] },
-                "L_Forearm": { p: "L_Arm", l: 0.6, d: [1,0,0] },
-                "R_Arm": { p: "Chest", l: 0.7, d: [-1,0,0] },
-                "R_Forearm": { p: "R_Arm", l: 0.6, d: [-1,0,0] },
-                "L_Thigh": { p: "Pelvis_L", l: 1.1, d: [0,-1,0] },
-                "L_Calf": { p: "L_Thigh", l: 0.9, d: [0,-1,0] },
-                "L_Foot": { p: "L_Calf", l: 0.25, d: [0,0,1] },
-                "R_Thigh": { p: "Pelvis_R", l: 1.1, d: [0,-1,0] },
-                "R_Calf": { p: "R_Thigh", l: 0.9, d: [0,-1,0] },
-                "R_Foot": { p: "R_Calf", l: 0.25, d: [0,0,1] }
-            },
-            pose: {}
-        },
-        vehicle: {
-            config: {
-                "Chassis": { p: null, l: 0, d: [0,0,0] },
-                "Axle_F": { p: "Chassis", l: 1.2, d: [1,0,0], offset: [0, 0.3, 1.5] },
-                "Axle_R": { p: "Chassis", l: 1.2, d: [1,0,0], offset: [0, 0.3, -1.5] },
-                "Wheel_FL": { p: "Axle_F", l: 0.4, d: [1,0,0] },
-                "Wheel_FR": { p: "Axle_F", l: 0.4, d: [-1,0,0] },
-                "Wheel_RL": { p: "Axle_R", l: 0.4, d: [1,0,0] },
-                "Wheel_RR": { p: "Axle_R", l: 0.4, d: [-1,0,0] },
-                "Turret_Base": { p: "Chassis", l: 0.5, d: [0,1,0], offset: [0, 0.8, 0] },
-                "Barrel": { p: "Turret_Base", l: 1.5, d: [0,0,1] }
-            },
-            pose: {}
-        }
+    const HUMAN_CONFIG = {
+        "Root": { p: null, l: 0, d: [0,0,0] },
+        "Pelvis": { p: "Root", l: 0, d: [0,0,0], offset: [0, 2.05, 0] },
+        "Spine": { p: "Root", l: 0.8, d: [0,1,0], offset: [0, 2.05, 0] },
+        "Pelvis_L": { p: "Pelvis", l: 0.3, d: [1,0,0] },
+        "Pelvis_R": { p: "Pelvis", l: 0.3, d: [-1,0,0] },
+        "Chest": { p: "Spine", l: 0.7, d: [0,1,0] },
+        "Neck": { p: "Chest", l: 0.2, d: [0,1,0] },
+        "Head": { p: "Neck", l: 0.4, d: [0,1,0] },
+        "L_Arm": { p: "Chest", l: 0.7, d: [1,0,0] },
+        "L_Forearm": { p: "L_Arm", l: 0.6, d: [1,0,0] },
+        "R_Arm": { p: "Chest", l: 0.7, d: [-1,0,0] },
+        "R_Forearm": { p: "R_Arm", l: 0.6, d: [-1,0,0] },
+        "L_Thigh": { p: "Pelvis_L", l: 1.1, d: [0,-1,0] },
+        "L_Calf": { p: "L_Thigh", l: 0.9, d: [0,-1,0] },
+        "L_Foot": { p: "L_Calf", l: 0.25, d: [0,0,1] },
+        "R_Thigh": { p: "Pelvis_R", l: 1.1, d: [0,-1,0] },
+        "R_Calf": { p: "R_Thigh", l: 0.9, d: [0,-1,0] },
+        "R_Foot": { p: "R_Calf", l: 0.25, d: [0,0,1] }
+    };
+
+    const RIG_DATA = {
+        rig1: { pose: {}, customNodes: [] },
+        rig2: { pose: {}, customNodes: [] }
     };
 
     // Initialize default poses
-    Object.keys(RIGS).forEach(r => {
-        Object.keys(RIGS[r].config).forEach(bone => RIGS[r].pose[bone] = [0,0,0]);
+    [RIG_DATA.rig1, RIG_DATA.rig2].forEach(rd => {
+        Object.keys(HUMAN_CONFIG).forEach(bone => rd.pose[bone] = [0,0,0]);
     });
 
-    let currentRigMode = 'humanoid';
+    let currentRig = 'rig1';
     let selectedBone = "Root";
-    let pivots = {}; 
+    let pivots = {};
     let clickables = [];
 
     const scene = new THREE.Scene();
@@ -112,29 +99,44 @@
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
     const controls = new OrbitControls(camera, renderer.domElement);
-    scene.add(new THREE.GridHelper(20, 40, 0x333333, 0x222222));
+    scene.add(new THREE.GridHelper(10, 20, 0x333333, 0x222222));
 
-    window.switchRig = (mode) => {
-        currentRigMode = mode;
+    function syncStructure() {
+        // Rig B always matches the box list of Rig A
+        // But Rig B keeps its existing pose if it has one for that box
+        const masterBoxes = JSON.parse(JSON.stringify(RIG_DATA.rig1.customNodes));
+        RIG_DATA.rig2.customNodes = masterBoxes;
+        
+        masterBoxes.forEach(node => {
+            if (!RIG_DATA.rig2.pose[node.id]) {
+                RIG_DATA.rig2.pose[node.id] = [0,0,0];
+            }
+        });
+    }
+
+    window.switchRig = (id) => {
+        currentRig = id;
         document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-        document.getElementById(`tab-${mode}`).classList.add('active');
-        selectedBone = Object.keys(RIGS[mode].config)[0];
+        document.getElementById(`tab-${id}`).classList.add('active');
+        selectedBone = "Root";
         rebuildScene();
     };
 
     function rebuildScene() {
         while(scene.children.length > 1) scene.remove(scene.children[1]);
         pivots = {}; clickables = [];
-        const { config } = RIGS[currentRigMode];
+        const { customNodes } = RIG_DATA[currentRig];
         
-        Object.keys(config).forEach(name => {
+        // Build base skeleton
+        Object.keys(HUMAN_CONFIG).forEach(name => {
             const pivot = new THREE.Group();
             pivot.name = name;
             pivots[name] = pivot;
+            const cfg = HUMAN_CONFIG[name];
+            const isRoot = !cfg.p;
             
-            const isRoot = !config[name].p;
             const dot = new THREE.Mesh(
-                isRoot ? new THREE.CylinderGeometry(0.3, 0.3, 0.05, 32) : new THREE.SphereGeometry(0.06), 
+                isRoot ? new THREE.CylinderGeometry(0.3, 0.3, 0.05, 32) : new THREE.SphereGeometry(0.05), 
                 new THREE.MeshBasicMaterial({color: 0xffffff})
             );
             pivot.add(dot);
@@ -143,16 +145,15 @@
 
             if (isRoot) scene.add(pivot);
             else {
-                const cfg = config[name];
                 const parent = pivots[cfg.p];
                 if (cfg.offset) pivot.position.set(...cfg.offset);
                 else {
-                    const pCfg = config[cfg.p];
+                    const pCfg = HUMAN_CONFIG[cfg.p];
                     pivot.position.set(pCfg.d[0]*pCfg.l, pCfg.d[1]*pCfg.l, pCfg.d[2]*pCfg.l);
                 }
                 parent.add(pivot);
                 if (cfg.l > 0) {
-                    const bone = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, cfg.l, 8), new THREE.MeshBasicMaterial({color: 0x888888}));
+                    const bone = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, cfg.l, 8), new THREE.MeshBasicMaterial({color: 0x666666}));
                     bone.position.set(cfg.d[0]*cfg.l/2, cfg.d[1]*cfg.l/2, cfg.d[2]*cfg.l/2);
                     if(cfg.d[0] !== 0) bone.rotation.z = Math.PI/2;
                     else if(cfg.d[2] !== 0) bone.rotation.x = Math.PI/2;
@@ -162,35 +163,78 @@
                 }
             }
         });
+
+        // Add Armor Boxes
+        customNodes.forEach(node => {
+            const box = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.4), new THREE.MeshBasicMaterial({color: 0x00ff88, wireframe: true}));
+            box.name = node.id;
+            box.userData.boneName = node.id;
+            box.userData.isCustom = true;
+            pivots[node.parentId].add(box);
+            pivots[node.id] = box;
+            clickables.push(box);
+        });
+
         updateApp();
     }
 
-    function updateApp() {
-        const { config, pose } = RIGS[currentRigMode];
-        document.getElementById('bone-label').innerText = selectedBone;
-        ['rotX', 'rotY', 'rotZ'].forEach((id, i) => document.getElementById(id).value = pose[selectedBone][i]);
-
-        Object.keys(pivots).forEach(name => {
-            const pivot = pivots[name];
-            const [x,y,z] = pose[name];
-            const dir = new THREE.Vector3().fromArray(config[name].d).normalize();
-            
-            pivot.quaternion.set(0,0,0,1);
-            pivot.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,0,1), z));
-            pivot.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,0,0), x));
-            pivot.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(dir.length()===0 ? new THREE.Vector3(0,1,0) : dir, y));
-            
-            pivot.traverse(c => { if(c.isMesh) c.material.color.set(name === selectedBone ? 0xffff00 : 0xffffff); });
-        });
-    }
-
-    window.resetPose = () => {
-        Object.keys(RIGS[currentRigMode].pose).forEach(bone => RIGS[currentRigMode].pose[bone] = [0,0,0]);
+    window.addBox = () => {
+        if (currentRig !== 'rig1') {
+            alert("Please add boxes to Master (A) to sync structure.");
+            return;
+        }
+        const id = "Box_" + Math.floor(Math.random()*10000);
+        RIG_DATA.rig1.customNodes.push({ id: id, parentId: selectedBone });
+        RIG_DATA.rig1.pose[id] = [0,0,0];
+        syncStructure();
+        rebuildScene();
+        selectedBone = id;
         updateApp();
     };
 
+    window.deleteSelected = () => {
+        if (!selectedBone.startsWith("Box_")) return;
+        if (currentRig !== 'rig1') {
+            alert("Please delete boxes from Master (A) to sync structure.");
+            return;
+        }
+        RIG_DATA.rig1.customNodes = RIG_DATA.rig1.customNodes.filter(n => n.id !== selectedBone);
+        delete RIG_DATA.rig1.pose[selectedBone];
+        syncStructure();
+        selectedBone = "Root";
+        rebuildScene();
+    };
+
+    function updateApp() {
+        const { pose } = RIG_DATA[currentRig];
+        document.getElementById('bone-label').innerText = selectedBone;
+        ['rotX', 'rotY', 'rotZ'].forEach((id, i) => {
+            document.getElementById(id).value = pose[selectedBone] ? pose[selectedBone][i] : 0;
+        });
+
+        Object.keys(pivots).forEach(name => {
+            const pivot = pivots[name];
+            const p = pose[name] || [0,0,0];
+            
+            if (pivot.isGroup) {
+                const cfg = HUMAN_CONFIG[name];
+                const dir = new THREE.Vector3().fromArray(cfg.d).normalize();
+                pivot.quaternion.set(0,0,0,1);
+                pivot.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,0,1), p[2]));
+                pivot.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,0,0), p[0]));
+                pivot.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(dir.length()===0 ? new THREE.Vector3(0,1,0) : dir, p[1]));
+            } else {
+                pivot.rotation.set(p[0], p[1], p[2]);
+            }
+            
+            pivot.traverse(c => { 
+                if(c.isMesh) c.material.color.set(name === selectedBone ? 0xffff00 : (c.userData.isCustom ? 0x00ff88 : 0xffffff));
+            });
+        });
+    }
+
     window.mirrorPose = (from, to) => {
-        const pose = RIGS[currentRigMode].pose;
+        const pose = RIG_DATA[currentRig].pose;
         Object.keys(pose).forEach(name => {
             let target = null;
             if (name.includes(`_${from}`)) target = name.replace(`_${from}`, `_${to}`);
@@ -204,13 +248,16 @@
     };
 
     window.exportJSON = () => {
-        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(RIGS[currentRigMode].pose, null, 2));
-        const downloadAnchorNode = document.createElement('a');
-        downloadAnchorNode.setAttribute("href", dataStr);
-        downloadAnchorNode.setAttribute("download", `${currentRigMode}_pose.json`);
-        document.body.appendChild(downloadAnchorNode);
-        downloadAnchorNode.click();
-        downloadAnchorNode.remove();
+        const data = { 
+            rigId: currentRig,
+            pose: RIG_DATA[currentRig].pose, 
+            structure: RIG_DATA[currentRig].customNodes 
+        };
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data, null, 2));
+        const dl = document.createElement('a');
+        dl.setAttribute("href", dataStr);
+        dl.setAttribute("download", `${currentRig}_pose.json`);
+        dl.click();
     };
 
     renderer.domElement.addEventListener('pointerdown', (e) => {
@@ -223,12 +270,14 @@
 
     ['rotX', 'rotY', 'rotZ'].forEach((id, axis) => {
         document.getElementById(id).oninput = (e) => {
-            RIGS[currentRigMode].pose[selectedBone][axis] = parseFloat(e.target.value);
-            updateApp();
+            if (RIG_DATA[currentRig].pose[selectedBone]) {
+                RIG_DATA[currentRig].pose[selectedBone][axis] = parseFloat(e.target.value);
+                updateApp();
+            }
         };
     });
 
-    window.switchRig('humanoid');
+    rebuildScene();
     function animate() { requestAnimationFrame(animate); renderer.render(scene, camera); }
     animate();
 </script>
