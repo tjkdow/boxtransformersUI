@@ -2,50 +2,61 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>3D Rig: Shared Armor / Unique Pose</title>
+    <title>3D Rig: Vehicle Variant & Precision Armor</title>
     <style>
         body { margin: 0; background: #050505; color: white; font-family: 'Segoe UI', sans-serif; overflow: hidden; touch-action: none; user-select: none; }
-        #ui { position: absolute; right: 10px; top: 10px; width: 220px; background: rgba(15, 15, 15, 0.95); padding: 15px; border-radius: 8px; border: 1px solid #444; z-index: 100; }
+        #ui { position: absolute; right: 10px; top: 10px; width: 260px; background: rgba(15, 15, 15, 0.95); padding: 15px; border-radius: 8px; border: 1px solid #444; z-index: 100; max-height: 90vh; overflow-y: auto; }
         
         .tabs { display: flex; gap: 2px; margin-bottom: 15px; background: #222; border-radius: 4px; padding: 2px; }
         .tab { flex: 1; padding: 8px; font-size: 10px; text-align: center; cursor: pointer; background: #333; border-radius: 2px; font-weight: bold; }
         .tab.active { background: #00ffff; color: #000; }
 
-        #bone-label { font-size: 14px; font-weight: bold; color: #00ffff; display: block; margin-bottom: 10px; overflow: hidden; text-overflow: ellipsis; }
+        #bone-label { font-size: 14px; font-weight: bold; color: #00ffff; display: block; margin-bottom: 10px; }
         label { display: block; font-size: 10px; color: #888; margin-top: 8px; text-transform: uppercase; }
-        input[type=range] { width: 100%; cursor: pointer; margin-bottom: 4px; accent-color: #00ffff; }
         
+        .control-row { display: flex; align-items: center; gap: 5px; margin-bottom: 2px; }
+        input[type=range] { flex-grow: 1; accent-color: #00ffff; }
+        input[type=number] { width: 50px; background: #222; color: #00ffff; border: 1px solid #444; font-size: 10px; padding: 2px; border-radius: 2px; }
+
+        .transform-section { margin-top: 15px; padding-top: 10px; border-top: 1px solid #333; display: none; }
         .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-top: 10px; }
         button { width: 100%; padding: 8px; cursor: pointer; background: #222; color: white; border: 1px solid #444; border-radius: 4px; font-size: 10px; font-weight: bold; }
-        button:hover { background: #333; }
-        .danger { background: #441111; color: #ff5555; border-color: #662222; }
+        .danger { background: #441111; color: #ff5555; }
     </style>
 </head>
 <body>
 
 <div id="ui">
     <div class="tabs">
-        <div class="tab active" id="tab-rig1" onclick="switchRig('rig1')">MASTER (A)</div>
-        <div class="tab" id="tab-rig2" onclick="switchRig('rig2')">VARIANT (B)</div>
+        <div class="tab active" id="tab-rig1" onclick="switchRig('rig1')">HUMANOID</div>
+        <div class="tab" id="tab-vehicle" onclick="switchRig('rig2')">VEHICLE</div>
     </div>
 
-    <label>Active Element</label>
+    <label>Target</label>
     <span id="bone-label">Root</span>
-    <label>Swing X</label><input type="range" id="rotX" min="-3.14" max="3.14" step="0.01" value="0">
-    <label>Swing Z</label><input type="range" id="rotZ" min="-3.14" max="3.14" step="0.01" value="0">
-    <label>Local Twist</label><input type="range" id="rotY" min="-3.14" max="3.14" step="0.01" value="0">
-    
-    <div class="btn-group">
-        <button onclick="mirrorPose('L','R')">L → R</button>
-        <button onclick="mirrorPose('R','L')">R → L</button>
+
+    <div id="pose-controls">
+        <label>Swing X</label>
+        <div class="control-row"><input type="range" id="rotX-s" min="-3.14" max="3.14" step="0.01"><input type="number" id="rotX-n" step="0.1"></div>
+        <label>Swing Z</label>
+        <div class="control-row"><input type="range" id="rotZ-s" min="-3.14" max="3.14" step="0.01"><input type="number" id="rotZ-n" step="0.1"></div>
+        <label>Twist Y</label>
+        <div class="control-row"><input type="range" id="rotY-s" min="-3.14" max="3.14" step="0.01"><input type="number" id="rotY-n" step="0.1"></div>
+    </div>
+
+    <div id="box-controls" class="transform-section">
+        <label>Offset X / Y / Z</label>
+        <div class="control-row"><input type="number" id="posX" step="0.1"> <input type="number" id="posY" step="0.1"> <input type="number" id="posZ" step="0.1"></div>
+        <label>Scale W / H / D</label>
+        <div class="control-row"><input type="number" id="scaX" step="0.1" value="1"> <input type="number" id="scaY" step="0.1" value="1"> <input type="number" id="scaZ" step="0.1" value="1"></div>
     </div>
     
     <div class="btn-group">
-        <button onclick="addBox()" style="background:#1b5e20; border:none;">ADD BOX</button>
+        <button onclick="addBox()" style="background:#1b5e20;">ADD BOX</button>
         <button onclick="deleteSelected()" class="danger">DELETE</button>
     </div>
     
-    <button onclick="exportJSON()" style="background:#f9a825; border:none; margin-top:10px; color:black; width:100%;">EXPORT POSE</button>
+    <button onclick="exportJSON()" style="background:#f9a825; border:none; margin-top:10px; color:black; width:100%;">EXPORT DATA</button>
 </div>
 
 <script type="importmap">
@@ -78,19 +89,17 @@
     };
 
     const RIG_DATA = {
-        rig1: { pose: {}, customNodes: [] },
-        rig2: { pose: {}, customNodes: [] }
+        rig1: { pose: {}, boxes: [] },
+        rig2: { pose: {}, boxes: [] }
     };
 
-    // Initialize default poses
     [RIG_DATA.rig1, RIG_DATA.rig2].forEach(rd => {
-        Object.keys(HUMAN_CONFIG).forEach(bone => rd.pose[bone] = [0,0,0]);
+        Object.keys(HUMAN_CONFIG).forEach(b => rd.pose[b] = { rot: [0,0,0], pos: [0,0,0], sca: [1,1,1] });
     });
 
     let currentRig = 'rig1';
-    let selectedBone = "Root";
-    let pivots = {};
-    let clickables = [];
+    let selectedId = "Root";
+    let pivots = {}, clickables = [];
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 100);
@@ -102,48 +111,30 @@
     scene.add(new THREE.GridHelper(10, 20, 0x333333, 0x222222));
 
     function syncStructure() {
-        // Rig B always matches the box list of Rig A
-        // But Rig B keeps its existing pose if it has one for that box
-        const masterBoxes = JSON.parse(JSON.stringify(RIG_DATA.rig1.customNodes));
-        RIG_DATA.rig2.customNodes = masterBoxes;
-        
-        masterBoxes.forEach(node => {
-            if (!RIG_DATA.rig2.pose[node.id]) {
-                RIG_DATA.rig2.pose[node.id] = [0,0,0];
-            }
-        });
+        const masterBoxes = JSON.parse(JSON.stringify(RIG_DATA.rig1.boxes));
+        RIG_DATA.rig2.boxes = masterBoxes;
+        masterBoxes.forEach(b => { if(!RIG_DATA.rig2.pose[b.id]) RIG_DATA.rig2.pose[b.id] = {rot:[0,0,0], pos:[0,0,0], sca:[1,1,1]}; });
     }
 
     window.switchRig = (id) => {
         currentRig = id;
         document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-        document.getElementById(`tab-${id}`).classList.add('active');
-        selectedBone = "Root";
+        document.getElementById(id === 'rig1' ? 'tab-rig1' : 'tab-vehicle').classList.add('active');
         rebuildScene();
     };
 
     function rebuildScene() {
         while(scene.children.length > 1) scene.remove(scene.children[1]);
         pivots = {}; clickables = [];
-        const { customNodes } = RIG_DATA[currentRig];
         
-        // Build base skeleton
         Object.keys(HUMAN_CONFIG).forEach(name => {
             const pivot = new THREE.Group();
-            pivot.name = name;
-            pivots[name] = pivot;
+            pivot.name = name; pivots[name] = pivot;
             const cfg = HUMAN_CONFIG[name];
-            const isRoot = !cfg.p;
-            
-            const dot = new THREE.Mesh(
-                isRoot ? new THREE.CylinderGeometry(0.3, 0.3, 0.05, 32) : new THREE.SphereGeometry(0.05), 
-                new THREE.MeshBasicMaterial({color: 0xffffff})
-            );
-            pivot.add(dot);
-            dot.userData.boneName = name;
-            clickables.push(dot);
+            const dot = new THREE.Mesh(new THREE.SphereGeometry(0.05), new THREE.MeshBasicMaterial());
+            pivot.add(dot); dot.userData.id = name; clickables.push(dot);
 
-            if (isRoot) scene.add(pivot);
+            if (!cfg.p) scene.add(pivot);
             else {
                 const parent = pivots[cfg.p];
                 if (cfg.offset) pivot.position.set(...cfg.offset);
@@ -153,128 +144,101 @@
                 }
                 parent.add(pivot);
                 if (cfg.l > 0) {
-                    const bone = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, cfg.l, 8), new THREE.MeshBasicMaterial({color: 0x666666}));
+                    const bone = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, cfg.l), new THREE.MeshBasicMaterial({color:0x444444}));
                     bone.position.set(cfg.d[0]*cfg.l/2, cfg.d[1]*cfg.l/2, cfg.d[2]*cfg.l/2);
                     if(cfg.d[0] !== 0) bone.rotation.z = Math.PI/2;
                     else if(cfg.d[2] !== 0) bone.rotation.x = Math.PI/2;
                     pivot.add(bone);
-                    bone.userData.boneName = name;
-                    clickables.push(bone);
                 }
             }
         });
 
-        // Add Armor Boxes
-        customNodes.forEach(node => {
-            const box = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.4), new THREE.MeshBasicMaterial({color: 0x00ff88, wireframe: true}));
-            box.name = node.id;
-            box.userData.boneName = node.id;
-            box.userData.isCustom = true;
-            pivots[node.parentId].add(box);
-            pivots[node.id] = box;
+        RIG_DATA[currentRig].boxes.forEach(boxData => {
+            const box = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.4), new THREE.MeshBasicMaterial({wireframe:true}));
+            box.userData.id = boxData.id;
+            box.userData.isBox = true;
+            pivots[boxData.parentId].add(box);
+            pivots[boxData.id] = box;
             clickables.push(box);
         });
+        updateUI();
+    }
 
-        updateApp();
+    function updateUI() {
+        const data = RIG_DATA[currentRig].pose[selectedId];
+        document.getElementById('bone-label').innerText = selectedId;
+        document.getElementById('box-controls').style.display = selectedId.startsWith("Box_") ? "block" : "none";
+
+        const setVal = (id, val) => {
+            const s = document.getElementById(id + '-s');
+            const n = document.getElementById(id + '-n');
+            if(s) s.value = val; if(n) n.value = Math.round(val * 100) / 100;
+        };
+
+        setVal('rotX', data.rot[0]); setVal('rotY', data.rot[1]); setVal('rotZ', data.rot[2]);
+        if(selectedId.startsWith("Box_")) {
+            ['X','Y','Z'].forEach((axis, i) => {
+                document.getElementById('pos'+axis).value = data.pos[i];
+                document.getElementById('sca'+axis).value = data.sca[i];
+            });
+        }
+
+        Object.keys(pivots).forEach(id => {
+            const p = pivots[id];
+            const d = RIG_DATA[currentRig].pose[id];
+            if (p.isGroup) {
+                p.quaternion.set(0,0,0,1);
+                p.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,0,0), d.rot[0]));
+                p.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), d.rot[1]));
+                p.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,0,1), d.rot[2]));
+            } else {
+                p.rotation.set(...d.rot);
+                p.position.set(...d.pos);
+                p.scale.set(...d.sca);
+            }
+            p.traverse(c => { if(c.isMesh) c.material.color.set(id === selectedId ? 0xffff00 : (c.userData.isBox ? 0x00ff88 : 0xffffff)); });
+        });
     }
 
     window.addBox = () => {
-        if (currentRig !== 'rig1') {
-            alert("Please add boxes to Master (A) to sync structure.");
-            return;
-        }
         const id = "Box_" + Math.floor(Math.random()*10000);
-        RIG_DATA.rig1.customNodes.push({ id: id, parentId: selectedBone });
-        RIG_DATA.rig1.pose[id] = [0,0,0];
-        syncStructure();
-        rebuildScene();
-        selectedBone = id;
-        updateApp();
+        RIG_DATA.rig1.boxes.push({ id, parentId: selectedId });
+        RIG_DATA.rig1.pose[id] = { rot:[0,0,0], pos:[0,0,0], sca:[1,1,1] };
+        syncStructure(); rebuildScene(); selectedId = id; updateUI();
     };
 
     window.deleteSelected = () => {
-        if (!selectedBone.startsWith("Box_")) return;
-        if (currentRig !== 'rig1') {
-            alert("Please delete boxes from Master (A) to sync structure.");
-            return;
-        }
-        RIG_DATA.rig1.customNodes = RIG_DATA.rig1.customNodes.filter(n => n.id !== selectedBone);
-        delete RIG_DATA.rig1.pose[selectedBone];
-        syncStructure();
-        selectedBone = "Root";
-        rebuildScene();
+        if (!selectedId.startsWith("Box_")) return;
+        RIG_DATA.rig1.boxes = RIG_DATA.rig1.boxes.filter(b => b.id !== selectedId);
+        syncStructure(); selectedId = "Root"; rebuildScene();
     };
 
-    function updateApp() {
-        const { pose } = RIG_DATA[currentRig];
-        document.getElementById('bone-label').innerText = selectedBone;
-        ['rotX', 'rotY', 'rotZ'].forEach((id, i) => {
-            document.getElementById(id).value = pose[selectedBone] ? pose[selectedBone][i] : 0;
-        });
-
-        Object.keys(pivots).forEach(name => {
-            const pivot = pivots[name];
-            const p = pose[name] || [0,0,0];
-            
-            if (pivot.isGroup) {
-                const cfg = HUMAN_CONFIG[name];
-                const dir = new THREE.Vector3().fromArray(cfg.d).normalize();
-                pivot.quaternion.set(0,0,0,1);
-                pivot.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,0,1), p[2]));
-                pivot.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,0,0), p[0]));
-                pivot.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(dir.length()===0 ? new THREE.Vector3(0,1,0) : dir, p[1]));
-            } else {
-                pivot.rotation.set(p[0], p[1], p[2]);
-            }
-            
-            pivot.traverse(c => { 
-                if(c.isMesh) c.material.color.set(name === selectedBone ? 0xffff00 : (c.userData.isCustom ? 0x00ff88 : 0xffffff));
-            });
-        });
-    }
-
-    window.mirrorPose = (from, to) => {
-        const pose = RIG_DATA[currentRig].pose;
-        Object.keys(pose).forEach(name => {
-            let target = null;
-            if (name.includes(`_${from}`)) target = name.replace(`_${from}`, `_${to}`);
-            else if (name.startsWith(from + '_')) target = name.replace(from + '_', to + '_');
-            if (target && pose[target]) {
-                const [x, y, z] = pose[name];
-                pose[target] = [-x, -y, -z];
-            }
-        });
-        updateApp();
-    };
-
-    window.exportJSON = () => {
-        const data = { 
-            rigId: currentRig,
-            pose: RIG_DATA[currentRig].pose, 
-            structure: RIG_DATA[currentRig].customNodes 
+    const inputs = ['rotX','rotY','rotZ','posX','posY','posZ','scaX','scaY','scaZ'];
+    inputs.forEach(key => {
+        const update = (val, type, axisIndex) => {
+            const d = RIG_DATA[currentRig].pose[selectedId];
+            if(key.startsWith('rot')) d.rot[axisIndex] = val;
+            else if(key.startsWith('pos')) d.pos[axisIndex] = val;
+            else if(key.startsWith('sca')) d.sca[axisIndex] = val;
+            updateUI();
         };
-        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data, null, 2));
-        const dl = document.createElement('a');
-        dl.setAttribute("href", dataStr);
-        dl.setAttribute("download", `${currentRig}_pose.json`);
-        dl.click();
-    };
+
+        const axisMap = {X:0, Y:1, Z:2};
+        const axisIdx = axisMap[key.slice(-1)];
+        const s = document.getElementById(key+'-s');
+        const n = document.getElementById(key+(s?'['-n':key.slice(-1)]')); 
+        // Logic for both slider and number box
+        if(s) s.oninput = (e) => update(parseFloat(e.target.value), 's', axisIdx);
+        const numInput = document.getElementById(s ? key+'-n' : key);
+        if(numInput) numInput.oninput = (e) => update(parseFloat(e.target.value) || 0, 'n', axisIdx);
+    });
 
     renderer.domElement.addEventListener('pointerdown', (e) => {
         const mouse = new THREE.Vector2((e.clientX/window.innerWidth)*2-1, -(e.clientY/window.innerHeight)*2+1);
         const raycaster = new THREE.Raycaster();
         raycaster.setFromCamera(mouse, camera);
         const hit = raycaster.intersectObjects(clickables)[0];
-        if (hit) { selectedBone = hit.object.userData.boneName; updateApp(); }
-    });
-
-    ['rotX', 'rotY', 'rotZ'].forEach((id, axis) => {
-        document.getElementById(id).oninput = (e) => {
-            if (RIG_DATA[currentRig].pose[selectedBone]) {
-                RIG_DATA[currentRig].pose[selectedBone][axis] = parseFloat(e.target.value);
-                updateApp();
-            }
-        };
+        if (hit) { selectedId = hit.object.userData.id; updateUI(); }
     });
 
     rebuildScene();
