@@ -76,7 +76,7 @@
     import { OrbitControls } from 'controls';
     import { TransformControls } from 'gizmo';
 
-    // CORRECTED HIERARCHY: Hips -> Thighs -> Knees
+    // STREAMLINED SKELETON: Direct Pelvis -> Thigh connection
     const SKELETON = {
         "Root": { p: null, l: 0, d: [0,0,0] }, 
         "Pelvis": { p: "Root", l: 0, d: [0,0,0], off: [0, 1.8, 0] }, 
@@ -85,11 +85,12 @@
         "Head": { p: "Chest", l: 0.4, d: [0,1,0], off: [0, 0.6, 0] },
         "L_Shoulder": { p: "Chest", l: 0.5, d: [1,0,0] }, "L_Elbow": { p: "L_Shoulder", l: 0.5, d: [1,0,0] },
         "R_Shoulder": { p: "Chest", l: 0.5, d: [-1,0,0] }, "R_Elbow": { p: "R_Shoulder", l: 0.5, d: [-1,0,0] },
-        "L_Hip": { p: "Pelvis", l: 0.2, d: [1,0,0], off: [0.2, 0, 0] }, 
-        "L_Thigh": { p: "L_Hip", l: 0.9, d: [0,-1,0] },
+        
+        // Thighs now split left/right natively from Pelvis origin offset
+        "L_Thigh": { p: "Pelvis", l: 0.9, d: [0,-1,0], off: [0.25, 0, 0] },
         "L_Knee": { p: "L_Thigh", l: 0.8, d: [0,-1,0] },
-        "R_Hip": { p: "Pelvis", l: 0.2, d: [-1,0,0], off: [-0.2, 0, 0] },
-        "R_Thigh": { p: "R_Hip", l: 0.9, d: [0,-1,0] },
+        
+        "R_Thigh": { p: "Pelvis", l: 0.9, d: [0,-1,0], off: [-0.25, 0, 0] },
         "R_Knee": { p: "R_Thigh", l: 0.8, d: [0,-1,0] }
     };
 
@@ -254,12 +255,12 @@
         document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
         document.getElementById('tab-' + t).classList.add('active');
         
-        // UI visibility
+        // UI Button Switch management
         document.getElementById('footer-veh-box').classList.toggle('hidden', t !== 'vehicle');
         document.getElementById('footer-rig-box').classList.toggle('hidden', t !== 'humanoid');
         document.getElementById('footer-rig-skeleton').classList.toggle('hidden', t !== 'humanoid');
 
-        // Scene visibility
+        // Target visibility bounds
         masterRig.group.visible = (t === 'humanoid');
         subRigs.forEach(r => r.group.visible = (t === 'humanoid'));
         vehicleBoxes.forEach(b => b.visible = (t === 'vehicle'));
@@ -287,7 +288,6 @@
         const mouse = new THREE.Vector2((e.clientX/window.innerWidth)*2-1, -(e.clientY/window.innerHeight)*2+1);
         const ray = new THREE.Raycaster(); ray.setFromCamera(mouse, camera);
         
-        // Find all visible interactable objects
         const pool = [];
         scene.traverse(child => { if(child.userData.type && child.visible) pool.push(child); });
         
