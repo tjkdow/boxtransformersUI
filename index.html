@@ -20,7 +20,8 @@
         .row { display: flex; align-items: center; gap: 5px; margin-top: 5px; }
         button { flex: 1; padding: 8px; cursor: pointer; background: #222; color: white; border: 1px solid #444; font-size: 9px; text-transform: uppercase; }
         button:hover { background: #333; border-color: #00ffff; }
-        .active-tool { background: #004d40; border-color: #00ffff; }
+        .active-tool { background: #004d40; border-color: #00ffff; color: #00ffff; }
+        .toggle-active { background: #4a148c; border-color: #aa00ff; color: #e0aaff; }
         
         #footer { position: absolute; bottom: 20px; left: 20px; z-index: 150; display: flex; gap: 10px; }
         .btn-main { padding: 10px 15px; background: #006064; color: white; border: 1px solid #00ffff; cursor: pointer; text-transform: uppercase; font-size: 10px; }
@@ -37,11 +38,21 @@
 <div id="ui">
     <div id="bone-label">EMPTY SELECTION</div>
     
-    <div id="rig-controls">
+    <div class="section-label">Suite Options</div>
+    <button id="btn-mirror" onclick="toggleMirror()" style="width:100%; text-align:center;">Mirror Feature: OFF</button>
+
+    <div id="rig-controls" class="hidden">
         <div class="section-label">Joint Rotation</div>
         <label>Flex / Extend (X)</label><input type="range" id="rotX" min="-3.14" max="3.14" step="0.01" value="0">
         <label>Side Tilt (Z)</label><input type="range" id="rotZ" min="-3.14" max="3.14" step="0.01" value="0">
         <label>Torsion / Twist (Y)</label><input type="range" id="rotY" min="-3.14" max="3.14" step="0.01" value="0">
+    </div>
+
+    <div id="scale-controls" class="hidden">
+        <div class="section-label">Thickness / Scale</div>
+        <label>Width (Scale X)</label><input type="range" id="scaleX" min="0.05" max="5.0" step="0.05" value="1">
+        <label>Height (Scale Y)</label><input type="range" id="scaleY" min="0.05" max="5.0" step="0.05" value="1">
+        <label>Depth (Scale Z)</label><input type="range" id="scaleZ" min="0.05" max="5.0" step="0.05" value="1">
     </div>
     
     <div class="section-label">Transform Control</div>
@@ -76,7 +87,6 @@
     import { OrbitControls } from 'controls';
     import { TransformControls } from 'gizmo';
 
-    // STREAMLINED SKELETON: Direct Pelvis -> Thigh connection
     const SKELETON = {
         "Root": { p: null, l: 0, d: [0,0,0] }, 
         "Pelvis": { p: "Root", l: 0, d: [0,0,0], off: [0, 1.8, 0] }, 
@@ -85,16 +95,19 @@
         "Head": { p: "Chest", l: 0.4, d: [0,1,0], off: [0, 0.6, 0] },
         "L_Shoulder": { p: "Chest", l: 0.5, d: [1,0,0] }, "L_Elbow": { p: "L_Shoulder", l: 0.5, d: [1,0,0] },
         "R_Shoulder": { p: "Chest", l: 0.5, d: [-1,0,0] }, "R_Elbow": { p: "R_Shoulder", l: 0.5, d: [-1,0,0] },
-        
-        // Thighs now split left/right natively from Pelvis origin offset
-        "L_Thigh": { p: "Pelvis", l: 0.9, d: [0,-1,0], off: [0.25, 0, 0] },
-        "L_Knee": { p: "L_Thigh", l: 0.8, d: [0,-1,0] },
-        
-        "R_Thigh": { p: "Pelvis", l: 0.9, d: [0,-1,0], off: [-0.25, 0, 0] },
-        "R_Knee": { p: "R_Thigh", l: 0.8, d: [0,-1,0] }
+        "L_Thigh": { p: "Pelvis", l: 0.9, d: [0,-1,0], off: [0.25, 0, 0] }, "L_Knee": { p: "L_Thigh", l: 0.8, d: [0,-1,0] },
+        "R_Thigh": { p: "Pelvis", l: 0.9, d: [0,-1,0], off: [-0.25, 0, 0] }, "R_Knee": { p: "R_Thigh", l: 0.8, d: [0,-1,0] }
     };
 
-    let curTab = 'vehicle', activeObj = null, activeRig = null, activeJointName = null;
+    // Symmetric bone mapping definitions
+    const BONE_MIRROR_MAP = {
+        "L_Shoulder": "R_Shoulder", "R_Shoulder": "L_Shoulder",
+        "L_Elbow": "R_Elbow", "R_Elbow": "L_Elbow",
+        "L_Thigh": "R_Thigh", "R_Thigh": "L_Thigh",
+        "L_Knee": "R_Knee", "R_Knee": "L_Knee"
+    };
+
+    let curTab = 'vehicle', activeObj = null, activeRig = null, activeJointName = null, isMirrorEnabled = false;
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 500);
     camera.position.set(8, 5, 8);
@@ -171,6 +184,18 @@
 
     masterRig = new RigSkeleton(true);
 
+    window.toggleMirror = () => {
+        isMirrorEnabled = !isMirrorEnabled;
+        const btn = document.getElementById('btn-mirror');
+        btn.innerText = `Mirror Feature: ${isMirrorEnabled ? 'ON' : 'OFF'}`;
+        btn.classList.toggle('toggle-active', isMirrorEnabled);
+        
+        // Re-evaluate visibility states for vehicle mirror mesh instances
+        vehicleBoxes.forEach(b => {
+            if (b.userData.mirrorMesh) b.userData.mirrorMesh.visible = (isMirrorEnabled && curTab === 'vehicle');
+        });
+    };
+
     window.addBox = (parented) => {
         const b = new THREE.Mesh(new THREE.BoxGeometry(0.5,0.5,0.5), new THREE.MeshStandardMaterial({color: 0x333333}));
         b.userData = { type: 'box', parented: parented };
@@ -179,7 +204,14 @@
             activeRig.pivots[activeJointName].add(b);
         } else {
             scene.add(b);
-            if (!parented) vehicleBoxes.push(b);
+            if (!parented) {
+                vehicleBoxes.push(b);
+                // Setup associated geometric twin for rendering Mirror Space layout
+                const mMesh = new THREE.Mesh(b.geometry, new THREE.MeshStandardMaterial({color: 0x224444, transparent: true, opacity: 0.6}));
+                mMesh.visible = isMirrorEnabled;
+                scene.add(mMesh);
+                b.userData.mirrorMesh = mMesh;
+            }
         }
         select(b);
     };
@@ -198,19 +230,31 @@
             gizmo.detach(); activeJointName = null; activeRig = null;
             document.getElementById('bone-label').innerText = "EMPTY SELECTION";
             document.getElementById('rig-controls').classList.add('hidden');
+            document.getElementById('scale-controls').classList.add('hidden');
             return;
         }
 
         if (obj.userData.type === 'box') {
             gizmo.attach(obj);
             obj.material.emissive.setHex(0x003333);
-            activeRig = null; activeJointName = obj.userData.parented ? "ARMOR PIECE" : "VEHICLE PART";
+            activeRig = null; 
+            const isParentedBox = obj.userData.parented;
+            activeJointName = isParentedBox ? "ARMOR PIECE" : "VEHICLE PART";
+            
             document.getElementById('rig-controls').classList.add('hidden');
+            document.getElementById('scale-controls').classList.toggle('hidden', curTab !== 'vehicle');
+            
+            if (curTab === 'vehicle') {
+                document.getElementById('scaleX').value = obj.scale.x;
+                document.getElementById('scaleY').value = obj.scale.y;
+                document.getElementById('scaleZ').value = obj.scale.z;
+            }
         } else if (obj.userData.type === 'bone') {
             activeRig = obj.userData.rig;
             activeJointName = obj.userData.name;
             gizmo.attach(activeRig.group);
             document.getElementById('rig-controls').classList.remove('hidden');
+            document.getElementById('scale-controls').classList.add('hidden');
 
             const p = activeRig.pose[activeJointName];
             document.getElementById('rotX').value = p[0];
@@ -227,6 +271,14 @@
         document.getElementById('px').value = target.position.x.toFixed(2);
         document.getElementById('py').value = target.position.y.toFixed(2);
         document.getElementById('pz').value = target.position.z.toFixed(2);
+        
+        // Sync positional changes dynamically onto mirrored object counterparts
+        if (curTab === 'vehicle' && activeObj.userData.type === 'box' && activeObj.userData.mirrorMesh) {
+            const m = activeObj.userData.mirrorMesh;
+            m.position.set(-activeObj.position.x, activeObj.position.y, activeObj.position.z);
+            m.rotation.set(activeObj.rotation.x, -activeObj.rotation.y, -activeObj.rotation.z);
+            m.scale.copy(activeObj.scale);
+        }
     }
 
     ['px','py','pz'].forEach((id, i) => {
@@ -234,13 +286,36 @@
             if (!activeObj) return;
             const target = (activeObj.userData.type === 'bone') ? activeObj.userData.rig.group : activeObj;
             target.position[['x','y','z'][i]] = parseFloat(e.target.value) || 0;
+            syncUI();
+        });
+    });
+
+    // Thickness / Scale Sliders for Vehicle Modeler Room
+    ['scaleX', 'scaleY', 'scaleZ'].forEach((id, i) => {
+        document.getElementById(id).addEventListener('input', (e) => {
+            if (activeObj && activeObj.userData.type === 'box' && curTab === 'vehicle') {
+                const val = parseFloat(e.target.value) || 0.1;
+                activeObj.scale[['x','y','z'][i]] = val;
+                syncUI();
+            }
         });
     });
 
     ['rotX', 'rotZ', 'rotY'].forEach((id, i) => {
         document.getElementById(id).oninput = (e) => {
             if (activeRig && activeJointName) {
-                activeRig.pose[activeJointName][i] = parseFloat(e.target.value);
+                const val = parseFloat(e.target.value);
+                activeRig.pose[activeJointName][i] = val;
+                
+                // Active Angular Skeletal Reflection Engine
+                if (isMirrorEnabled) {
+                    const mirroredBone = BONE_MIRROR_MAP[activeJointName];
+                    if (mirroredBone) {
+                        if (i === 0) activeRig.pose[mirroredBone][0] = val;  // Flexion/Extension retains directional mapping
+                        if (i === 1) activeRig.pose[mirroredBone][1] = -val; // Lateral abduction flips inversion vectors
+                        if (i === 2) activeRig.pose[mirroredBone][2] = -val; // Axial rotation splits inverse coordinate limits
+                    }
+                }
             }
         };
     });
@@ -255,15 +330,19 @@
         document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
         document.getElementById('tab-' + t).classList.add('active');
         
-        // UI Button Switch management
         document.getElementById('footer-veh-box').classList.toggle('hidden', t !== 'vehicle');
         document.getElementById('footer-rig-box').classList.toggle('hidden', t !== 'humanoid');
         document.getElementById('footer-rig-skeleton').classList.toggle('hidden', t !== 'humanoid');
 
-        // Target visibility bounds
         masterRig.group.visible = (t === 'humanoid');
         subRigs.forEach(r => r.group.visible = (t === 'humanoid'));
-        vehicleBoxes.forEach(b => b.visible = (t === 'vehicle'));
+        
+        vehicleBoxes.forEach(b => {
+            b.visible = (t === 'vehicle');
+            if (b.userData.mirrorMesh) {
+                b.userData.mirrorMesh.visible = (isMirrorEnabled && t === 'vehicle');
+            }
+        });
         
         select(null);
     };
@@ -273,6 +352,7 @@
         if (activeObj.userData.type === 'box') {
             if (activeObj.parent !== scene) activeObj.parent.remove(activeObj);
             else {
+                if (activeObj.userData.mirrorMesh) scene.remove(activeObj.userData.mirrorMesh);
                 vehicleBoxes.splice(vehicleBoxes.indexOf(activeObj), 1);
                 scene.remove(activeObj);
             }
@@ -300,6 +380,11 @@
         requestAnimationFrame(animate); 
         masterRig.update();
         subRigs.forEach(r => r.update());
+        
+        // Continuous updates keeping scenery transformations locked smoothly
+        if (curTab === 'vehicle' && activeObj && activeObj.userData.type === 'box' && activeObj.userData.mirrorMesh) {
+            syncUI();
+        }
         renderer.render(scene, camera); 
     }
     animate();
